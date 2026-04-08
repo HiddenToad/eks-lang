@@ -1,0 +1,14 @@
+comp Area(w: int, h: int);
+
+let a = "mewo; ";
+
+ent Rect(Position, Area);
+
+fun(Area) doubled (a: Area) { return Area(a.w, a.h); }
+
+
+[r: Rect]
+sys(void) set_area_w_2(){
+    r.area.w = 2;
+} 
+
