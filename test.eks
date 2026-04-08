@@ -1,10 +1,9 @@
 comp Area(w: int, h: int);
-
-let a = "mewo; ";
+comp Position(x: int, y: int);
 
 ent Rect(Position, Area);
 
-fun(Area) doubled (a: Area) { return Area(a.w, a.h); }
+fun(Area) doubled (a: Area) { return Area(a.w*2, a.h * 2); }
 
 
 [r: Rect]

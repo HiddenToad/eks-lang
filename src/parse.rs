@@ -1,6 +1,5 @@
 use crate::lex::*;
 
-
 #[derive(Debug)]
 pub struct ParseError {
     pub message: String,
@@ -9,8 +8,8 @@ pub struct ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
-            f, 
-            "Parse error at line {}, column {}: {}", 
+            f,
+            "Parse error at line {}, column {}: {}",
             self.span.line, self.span.col, self.message
         )
     }
@@ -39,14 +38,14 @@ pub struct LetDecl {
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompDecl {
     pub name: String,
     pub fields: Vec<Field>,
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
     pub ty: Type,
@@ -110,22 +109,45 @@ pub enum Expr {
     Float(f64),
     StringLiteral(String),
     Bool(bool),
-    FieldAccess { object: Box<Expr>, field: String },
-    Call { callee: String, args: Vec<Expr> },
-    Binary { left: Box<Expr>, op: BinOp, right: Box<Expr> },
-    Unary { op: UnOp, expr: Box<Expr> },
+    FieldAccess {
+        object: Box<Expr>,
+        field: String,
+    },
+    Call {
+        callee: String,
+        args: Vec<Expr>,
+    },
+    Binary {
+        left: Box<Expr>,
+        op: BinOp,
+        right: Box<Expr>,
+    },
+    Unary {
+        op: UnOp,
+        expr: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {
-    Add, Sub, Mul, Div,
-    Eq, Neq, Lt, Gt, Lte, Gte,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Lte,
+    Gte,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum UnOp {
-    Neg, Not,
+    Neg,
+    Not,
 }
 
 // Operator precedence table
@@ -179,15 +201,15 @@ impl Parser {
     fn can_start_expr(&self) -> bool {
         matches!(
             self.peek(),
-            Token::Ident(_) 
-            | Token::Int(_) 
-            | Token::Float(_) 
-            | Token::StringLiteral(_) 
-            | Token::True 
-            | Token::False 
-            | Token::LParen 
-            | Token::Minus 
-            | Token::Not
+            Token::Ident(_)
+                | Token::Int(_)
+                | Token::Float(_)
+                | Token::StringLiteral(_)
+                | Token::True
+                | Token::False
+                | Token::LParen
+                | Token::Minus
+                | Token::Not
         )
     }
 
@@ -235,10 +257,10 @@ impl Parser {
             if !matches!(self.peek(), Token::Ident(_)) {
                 break;
             }
-            
+
             let (ident, _) = self.expect_ident()?;
             items.push(ident);
-            
+
             if self.peek() == &Token::Comma {
                 self.advance();
             } else if self.peek() != &end {
@@ -259,12 +281,12 @@ impl Parser {
             if !matches!(self.peek(), Token::Ident(_)) {
                 break;
             }
-            
+
             let (name, _) = self.expect_ident()?;
             self.expect(&Token::Colon)?;
             let ty = self.parse_type()?;
             params.push(Param { name, ty });
-            
+
             if self.peek() == &Token::Comma {
                 self.advance();
             } else if self.peek() != &Token::RParen {
@@ -320,10 +342,12 @@ impl Parser {
                 Token::Fun => self.parse_fun_decl().map(Decl::Fun)?,
                 Token::Let => self.parse_let_decl().map(Decl::Let)?,
                 Token::LBracket => self.parse_sys_decl().map(Decl::Sys)?,
-                tok => return Err(ParseError {
-                    message: format!("Unexpected token: {:?}", tok),
-                    span: self.peek_span(),
-                }),
+                tok => {
+                    return Err(ParseError {
+                        message: format!("Unexpected token: {:?}", tok),
+                        span: self.peek_span(),
+                    })
+                }
             };
             decls.push(decl);
         }
@@ -335,20 +359,22 @@ impl Parser {
         let start = self.peek_span();
         self.expect(&Token::Comp)?;
         let (name, _) = self.expect_ident()?;
-        
+
         self.expect(&Token::LParen)?;
         let mut fields = vec![];
         while self.peek() != &Token::RParen {
-
             if !matches!(self.peek(), Token::Ident(_)) {
                 break;
             }
-            
+
             let (field_name, _) = self.expect_ident()?;
             self.expect(&Token::Colon)?;
             let ty = self.parse_type()?;
-            fields.push(Field { name: field_name, ty });
-            
+            fields.push(Field {
+                name: field_name,
+                ty,
+            });
+
             if self.peek() == &Token::Comma {
                 self.advance();
             } else if self.peek() != &Token::RParen {
@@ -358,7 +384,7 @@ impl Parser {
                 });
             }
         }
-        
+
         self.expect(&Token::RParen)?;
         self.expect(&Token::Semicolon)?;
 
@@ -373,7 +399,7 @@ impl Parser {
         let start = self.peek_span();
         self.expect(&Token::Ent)?;
         let (name, _) = self.expect_ident()?;
-        
+
         self.expect(&Token::LParen)?;
         let comps = self.parse_ident_list(Token::RParen)?;
 
@@ -389,7 +415,7 @@ impl Parser {
     fn parse_fun_decl(&mut self) -> ParseResult<FunDecl> {
         let start = self.peek_span();
         self.expect(&Token::Fun)?;
-        
+
         self.expect(&Token::LParen)?;
         let ret = self.parse_return_type()?;
         self.expect(&Token::RParen)?;
@@ -416,7 +442,7 @@ impl Parser {
         loop {
             let (var, _) = self.expect_ident()?;
             self.expect(&Token::Colon)?;
-            
+
             if self.peek() == &Token::Ent {
                 self.advance();
                 self.expect(&Token::LParen)?;
@@ -434,7 +460,7 @@ impl Parser {
                 break;
             }
         }
-        
+
         self.expect(&Token::RBracket)?;
         self.expect(&Token::Sys)?;
 
@@ -452,7 +478,7 @@ impl Parser {
             params,
             ret,
             span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
-            body
+            body,
         })
     }
 
@@ -495,12 +521,12 @@ impl Parser {
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_expr()?;
-                
+
                 if self.peek() == &Token::Assign {
                     self.advance();
                     let value = self.parse_expr()?;
                     self.expect(&Token::Semicolon)?;
-                    
+
                     // Convert Expr to LValue
                     let target = expr_to_lvalue(expr)?;
                     Ok(Stmt::Assign { target, value })
@@ -542,12 +568,18 @@ impl Parser {
             Token::Minus => {
                 self.advance();
                 let expr = self.parse_unary()?;
-                Ok(Expr::Unary { op: UnOp::Neg, expr: Box::new(expr) })
+                Ok(Expr::Unary {
+                    op: UnOp::Neg,
+                    expr: Box::new(expr),
+                })
             }
             Token::Not => {
                 self.advance();
                 let expr = self.parse_unary()?;
-                Ok(Expr::Unary { op: UnOp::Not, expr: Box::new(expr) })
+                Ok(Expr::Unary {
+                    op: UnOp::Not,
+                    expr: Box::new(expr),
+                })
             }
             _ => self.parse_postfix(),
         }
@@ -573,13 +605,13 @@ impl Parser {
             Token::Ident(s) => {
                 let s = s.clone();
                 self.advance();
-                
+
                 if self.peek() == &Token::LParen {
                     self.advance();
                     let mut args = vec![];
                     while self.peek() != &Token::RParen {
                         if !self.can_start_expr() {
-                            break; 
+                            break;
                         }
                         args.push(self.parse_expr()?);
                         if self.peek() == &Token::Comma {
@@ -634,9 +666,9 @@ fn expr_to_lvalue(expr: Expr) -> ParseResult<LValue> {
         Expr::Ident(name) => Ok(LValue::Ident(name)),
         Expr::FieldAccess { object, field } => {
             let object = expr_to_lvalue(*object)?;
-            Ok(LValue::FieldAccess { 
-                object: Box::new(object), 
-                field 
+            Ok(LValue::FieldAccess {
+                object: Box::new(object),
+                field,
             })
         }
         _ => Err(ParseError {
