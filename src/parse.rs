@@ -5,6 +5,7 @@ pub struct ParseError {
     pub message: String,
     pub span: Span,
 }
+
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -17,6 +18,7 @@ impl std::fmt::Display for ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
+//Our fully parsed AST
 #[derive(Debug)]
 pub struct Program {
     pub decls: Vec<Decl>,
@@ -31,102 +33,128 @@ pub enum Decl {
     Let(LetDecl),
 }
 
+//For all the Decl structs below, I give
+//above an example LoC that would be parsed
+//into that decl. Then, I show for each field
+//which part of the example it corresponds to.
+
+//let x = val;
 #[derive(Debug)]
-pub struct LetDecl {
-    pub name: String,
-    pub value: Expr,
-    pub span: Span,
+pub struct LetDecl { 
+    pub name: String, //x
+    pub value: Expr,  //val
+    pub span: Span, 
 }
 
+//comp Foo(a: int, b: int);
 #[derive(Debug, Clone)]
 pub struct CompDecl {
-    pub name: String,
-    pub fields: Vec<Field>,
+    pub name: String, //Foo
+    pub fields: Vec<Field>, //[(a, int), (b, int)]
     pub span: Span,
 }
 
+//a: int
 #[derive(Debug, Clone)]
 pub struct Field {
-    pub name: String,
-    pub ty: Type,
+    pub name: String, //a
+    pub ty: Type, //int
 }
 
+//ent Baz(Foo, Bar);
 #[derive(Debug)]
 pub struct EntDecl {
-    pub name: String,
-    pub comps: Vec<String>,
+    pub name: String, //Baz
+    pub comps: Vec<String>, //[Foo, Bar]
     pub span: Span,
 }
 
+//fun(int) truncate(a: float){
+//  return int(a)
+//}
 #[derive(Debug)]
 pub struct FunDecl {
-    pub name: String,
-    pub params: Vec<Param>,
-    pub ret: Type,
-    pub body: Vec<Stmt>,
+    pub name: String, //truncate
+    pub params: Vec<Param>, //[(a, float)]
+    pub ret: Type,  //int
+    pub body: Vec<Stmt>, //[Return(Some(Call(int, [Ident(a)])))]
     pub span: Span,
 }
 
+//in a function or system:
+//(arg: string)
 #[derive(Debug)]
 pub struct Param {
-    pub name: String,
-    pub ty: Type,
+    pub name: String, //arg
+    pub ty: Type, //string
 }
 
+//[q : ent(Foo, Bar)]
+//sys(void) scale_foos_by_bars(scale: float){
+//  q.foo.value *= q.bar.value;
+//}
 #[derive(Debug)]
 pub struct SysDecl {
-    pub query: Query,
-    pub name: String,
-    pub params: Vec<Param>,
-    pub ret: Type,
-    pub body: Vec<Stmt>,
+    pub query: Query, //[(q, [Foo, Bar])]
+    pub name: String, //scale_foos_by_bars
+    pub params: Vec<Param>, //[(scale, float)]
+    pub ret: Type, //void
+    pub body: Vec<Stmt>, //[Binary(FieldAccess(...), MulAssn, FieldAccess(...))]
     pub span: Span,
 }
 
+//[q: ent(Foo, Bar, Baz)]
 #[derive(Debug)]
 pub struct Query {
-    pub bindings: Vec<(String, Vec<String>)>, // [(var, [comps])]
+    pub bindings: Vec<(String, Vec<String>)>, // [(q, [Foo, Bar, Baz])]
 }
 
+//let foo = 5;
+//foo = 6;
+//return true;
+//9 + 6
 #[derive(Debug)]
 pub enum Stmt {
-    Let { name: String, value: Expr },
-    Assign { target: LValue, value: Expr },
-    Return(Option<Expr>),
-    Expr(Expr),
+    Let { name: String, value: Expr }, //foo, 5
+    Assign { target: LValue, value: Expr }, //foo, 6
+    Return(Option<Expr>), //Some(true)
+    Expr(Expr), //Binary(9, Add, 6)
 }
 
+//guy
+//guy.pos
 #[derive(Debug)]
 pub enum LValue {
-    Ident(String),
-    FieldAccess { object: Box<LValue>, field: String },
+    Ident(String), //guy
+    FieldAccess { object: Box<LValue>, field: String }, //guy, pos
 }
 
 #[derive(Debug)]
 pub enum Expr {
-    Ident(String),
-    Int(i64),
-    Float(f64),
-    StringLiteral(String),
-    Bool(bool),
-    FieldAccess {
-        object: Box<Expr>,
-        field: String,
+    Ident(String), //x
+    Int(i64), //10
+    Float(f64), //0.5
+    StringLiteral(String), //"hi"
+    Bool(bool), //true
+    FieldAccess { //x.y
+        object: Box<Expr>, //x
+        field: String, //y
     },
-    Call {
-        callee: String,
-        args: Vec<Expr>,
+    Call { //f(x, y)
+        callee: String,//f
+        args: Vec<Expr>,//[x, y]
     },
-    Binary {
-        left: Box<Expr>,
-        op: BinOp,
-        right: Box<Expr>,
+    Binary { // 5 > 3
+        left: Box<Expr>, //5
+        op: BinOp, //GT
+        right: Box<Expr>, //3
     },
-    Unary {
-        op: UnOp,
-        expr: Box<Expr>,
+    Unary { //!false
+        op: UnOp, //Not
+        expr: Box<Expr>, //false
     },
 }
+
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {
@@ -150,17 +178,18 @@ pub enum UnOp {
     Not,
 }
 
-// Operator precedence table
+//operator precedences
 fn precedence(op: BinOp) -> u8 {
     match op {
-        BinOp::Or => 1,
+        BinOp::Or => 1, //weakest priority
         BinOp::And => 2,
         BinOp::Eq | BinOp::Neq => 3,
         BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte => 4,
         BinOp::Add | BinOp::Sub => 5,
-        BinOp::Mul | BinOp::Div => 6,
+        BinOp::Mul | BinOp::Div => 6, //strongest priority
     }
 }
+
 
 fn is_binary_op(token: &Token) -> Option<BinOp> {
     match token {
@@ -181,7 +210,10 @@ fn is_binary_op(token: &Token) -> Option<BinOp> {
 }
 
 pub struct Parser {
+    //all tokens
     tokens: Vec<SpannedToken>,
+    
+    //cursor into tomens
     pos: usize,
 }
 
@@ -304,6 +336,7 @@ impl Parser {
         match self.advance() {
             Token::IntType => Ok(Type::Int),
             Token::StringType => Ok(Type::String),
+            Token::FloatType => Ok(Type::Float),
             Token::VoidType => Ok(Type::Void),
             Token::BoolType => Ok(Type::Bool),
             Token::Ident(s) => Ok(Type::Custom(s)),
@@ -538,7 +571,6 @@ impl Parser {
         }
     }
 
-    // Pratt parser for expressions with proper precedence
     fn parse_expr(&mut self) -> ParseResult<Expr> {
         self.parse_precedence(0)
     }
