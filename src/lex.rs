@@ -1,11 +1,14 @@
 use crate::utils::peek_while;
 
+//Span represents a token's lexical position
+//Start -> End is a char range
+//Line : Col is line + column num
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
-    pub line: usize, // 1-based line number
-    pub col: usize,  // 1-based column number
+    pub line: usize, 
+    pub col: usize,  
 }
 
 impl Span {
@@ -19,6 +22,8 @@ impl Span {
     }
 }
 
+//A token which contains information about
+//its lexical position in code.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpannedToken {
     pub token: Token,
@@ -31,6 +36,10 @@ impl SpannedToken {
     }
 }
 
+//Allow SpannedToken to deref to Token
+//This is just for convenience, but makes
+//SpannedToken feel more "related" to Token
+//rather than just composed of it.
 impl std::ops::Deref for SpannedToken {
     type Target = Token;
     fn deref(&self) -> &Self::Target {
@@ -40,9 +49,16 @@ impl std::ops::Deref for SpannedToken {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    //User-defined identifier [ex: my_comp]
     Ident(String),
+    
+    //Integer literal [ex: 2]
     Int(i64),
+    
+    //Floating-point literal [ex: 12.5]
     Float(f64),
+    
+    //String literal (quoted) [ex: "hello"]
     StringLiteral(String),
 
     // Single char symbols
@@ -54,7 +70,7 @@ pub enum Token {
     RBracket,
     Semicolon,
     Comma,
-    Assign,
+    Assign, // =
     Colon,
     Dot,
     Plus,
@@ -66,12 +82,12 @@ pub enum Token {
     Not,
 
     // Two char symbols
-    Eq,
-    Neq,
-    Lte,
-    Gte,
-    And,
-    Or,
+    Eq, //==
+    Neq, //!=
+    Lte, //<=
+    Gte, //>=
+    And, //&&
+    Or, //||
 
     // Keywords
     Comp,
