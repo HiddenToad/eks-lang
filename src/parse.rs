@@ -470,7 +470,7 @@ impl Parser {
         let start = self.peek_span();
         self.expect(&Token::LBracket)?;
 
-        // Parse query bindings: [r: Rect, p: Position] or [r: ent(Player, Health)]
+        //parse bindings: [q: EntName] or [q: ent(Comp1, Comp2)]
         let mut bindings = vec![];
         loop {
             let (var, _) = self.expect_ident()?;
@@ -552,7 +552,6 @@ impl Parser {
                 }
             }
             _ => {
-                // Try to parse as assignment or expression
                 let expr = self.parse_expr()?;
 
                 if self.peek() == &Token::Assign {
@@ -560,7 +559,9 @@ impl Parser {
                     let value = self.parse_expr()?;
                     self.expect(&Token::Semicolon)?;
 
-                    // Convert Expr to LValue
+                    //get assignable lvalue from 
+                    //arbitrary expr 
+                    //(in practice Ident or FieldAccess)
                     let target = expr_to_lvalue(expr)?;
                     Ok(Stmt::Assign { target, value })
                 } else {
@@ -584,7 +585,7 @@ impl Parser {
                 break;
             }
             self.advance();
-            let right = self.parse_precedence(prec + 1)?; // left-associative
+            let right = self.parse_precedence(prec + 1)?; //left associative
             left = Expr::Binary {
                 left: Box::new(left),
                 op,
@@ -705,7 +706,7 @@ fn expr_to_lvalue(expr: Expr) -> ParseResult<LValue> {
         }
         _ => Err(ParseError {
             message: "Invalid assignment target".to_string(),
-            span: Span::new(0, 0, 0, 0), // TODO: track spans in Expr
+            span: Span::new(0, 0, 0, 0), //TODO: track spans in Expr
         }),
     }
 }
