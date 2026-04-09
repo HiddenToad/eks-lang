@@ -7,8 +7,8 @@ use crate::utils::peek_while;
 pub struct Span {
     pub start: usize,
     pub end: usize,
-    pub line: usize, 
-    pub col: usize,  
+    pub line: usize,
+    pub col: usize,
 }
 
 impl Span {
@@ -51,17 +51,17 @@ impl std::ops::Deref for SpannedToken {
 pub enum Token {
     //User-defined identifier [ex: my_comp]
     Ident(String),
-    
+
     //Integer literal [ex: 2]
     Int(i64),
-    
+
     //Floating-point literal [ex: 12.5]
     Float(f64),
-    
+
     //String literal (quoted) [ex: "hello"]
     StringLiteral(String),
 
-    // Single char symbols
+    //Single char symbols
     LParen,
     RParen,
     LBrace,
@@ -81,28 +81,32 @@ pub enum Token {
     Gt,
     Not, // !
 
-    // Two char symbols
-    Eq, //==
+    //Two char symbols
+    Eq,  //==
     Neq, // !=
     Lte, //<=
     Gte, //>=
     And, //&&
-    Or, //||
+    Or,  //||
 
-    // Keywords
+    //Keywords
     Comp,
     Ent,
     Fun,
     Sys,
     Let,
+    Return,
+    True,
+    False,
+    If,
+    Else,
+
+    //types
     IntType,
     FloatType,
     StringType,
     VoidType,
     BoolType,
-    Return,
-    True,
-    False,
 
     EOF, //special token to mark end of input
 }
@@ -118,7 +122,7 @@ pub enum Type {
     Custom(String),
 }
 
-// Helper to update line/col
+//Helper to update line/col
 //Increments the line# when newline encountered
 fn update_state_for_str(state: &mut (usize, usize), s: &str) {
     for c in s.chars() {
@@ -138,7 +142,6 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
     //(line, col)
     let mut state = (1usize, 1usize);
 
-    
     while let Some(&(idx, c)) = chars.peek() {
         //whitespace is ignored semantically
         //just increments Span values
@@ -162,7 +165,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             chars.next(); //eat open quote
             state.1 += 1; //record opening quote
             let s = peek_while(&mut chars, |c| c.1 != '"'); //eat until closing quote
-            update_state_for_str(&mut state, &s); 
+            update_state_for_str(&mut state, &s);
             chars.next(); //eat close quote
             state.1 += 1; //record closing quote
 
@@ -171,7 +174,8 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 Token::StringLiteral(s),
                 Span::new(start, start + len + 2, start_line, start_col),
             ));
-        } else if c.is_ascii_digit() { //no leading decimal
+        } else if c.is_ascii_digit() {
+            //no leading decimal
             let num_str = peek_while(&mut chars, |(_, c)| c.is_ascii_digit() || c == &'.');
             update_state_for_str(&mut state, &num_str);
             let span = Span::new(start, start + num_str.len(), start_line, start_col);
@@ -189,7 +193,8 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                     span,
                 ));
             }
-        } else if c.is_alphabetic() || c == '_' { //ident or keyword
+        } else if c.is_alphabetic() || c == '_' {
+            //ident or keyword
             let ident = peek_while(&mut chars, |c| c.1.is_alphanumeric() || c.1 == '_');
             update_state_for_str(&mut state, &ident);
             let span = Span::new(start, start + ident.len(), start_line, start_col);
@@ -211,76 +216,91 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 "and" => Token::And,
                 "or" => Token::Or,
                 "not" => Token::Not,
+                "if" => Token::If,
+                "else" => Token::Else,
                 _ => Token::Ident(ident),
             };
             tokens.push(SpannedToken::new(token, span));
         }
         //Two-character operators
-        else if c == '=' { //distinguish between == and =
+        else if c == '=' {
+            //distinguish between == and =
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new( // ==
+                tokens.push(SpannedToken::new(
+                    // ==
                     Token::Eq,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new( // =
+                tokens.push(SpannedToken::new(
+                    // =
                     Token::Assign,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '!' {//distinguish between ! and !=
+        } else if c == '!' {
+            //distinguish between ! and !=
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new( // !=
+                tokens.push(SpannedToken::new(
+                    // !=
                     Token::Neq,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new( // !
+                tokens.push(SpannedToken::new(
+                    // !
                     Token::Not,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '<' { //distinguish btwn < and <=
+        } else if c == '<' {
+            //distinguish btwn < and <=
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new( //<=
+                tokens.push(SpannedToken::new(
+                    //<=
                     Token::Lte,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new(//<
+                tokens.push(SpannedToken::new(
+                    //<
                     Token::Lt,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '>' { //distinguish between > and >=
+        } else if c == '>' {
+            //distinguish between > and >=
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new(//>=
+                tokens.push(SpannedToken::new(
+                    //>=
                     Token::Gte,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new(//>
+                tokens.push(SpannedToken::new(
+                    //>
                     Token::Gt,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '&' { //&&
+        } else if c == '&' {
+            //&&
             chars.next();
             if matches!(chars.peek(), Some((_, '&'))) {
                 chars.next();
@@ -295,7 +315,8 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                     start_line, start_col
                 );
             }
-        } else if c == '|' { //||
+        } else if c == '|' {
+            //||
             chars.next();
             if matches!(chars.peek(), Some((_, '|'))) {
                 chars.next();

@@ -27,6 +27,7 @@ pub struct Codegen<'ctx> {
     functions: HashMap<String, FunctionValue<'ctx>>,
     variables: HashMap<String, PointerValue<'ctx>>,
     active_query: HashMap<String, QueryVar<'ctx>>,
+    current_fn: Option<FunctionValue<'ctx>>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -44,6 +45,7 @@ impl<'ctx> Codegen<'ctx> {
             functions: HashMap::new(),
             variables: HashMap::new(),
             active_query: HashMap::new(),
+            current_fn: None,
         }
     }
 
@@ -59,9 +61,9 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
-        //2nd pass: now that we've registered all the 
+        //2nd pass: now that we've registered all the
         //comps and ents, we can compile the actual behavior
-        //of the program. 
+        //of the program.
         for decl in &program.decls {
             match decl {
                 Decl::Let(let_decl) => self.compile_global_let(let_decl)?,
@@ -73,7 +75,7 @@ impl<'ctx> Codegen<'ctx> {
 
         Ok(())
     }
-    
+
     //optimization function. this makes IR generation
     //avoid passing along unused components. If an entity
     //with 5 comps is queries, but only 2 of those are read or written
@@ -191,7 +193,7 @@ impl<'ctx> Codegen<'ctx> {
         Ok(())
     }
 
-    //convert an Eks type into an LLVM type 
+    //convert an Eks type into an LLVM type
     fn resolve_type(&self, ty: &Type) -> Result<BasicTypeEnum<'ctx>, String> {
         match ty {
             Type::Int => Ok(self.context.i64_type().into()),
@@ -228,6 +230,7 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_fun(&mut self, fun: &FunDecl) -> Result<(), String> {
         self.variables.clear();
         self.active_query.clear();
+        self.current_fn = None;
 
         let mut param_types: Vec<BasicTypeEnum> = vec![];
         for param in &fun.params {
@@ -244,6 +247,7 @@ impl<'ctx> Codegen<'ctx> {
 
         let function = self.module.add_function(&fun.name, fn_type, None);
         self.functions.insert(fun.name.clone(), function);
+        self.current_fn = Some(function);
 
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
@@ -269,14 +273,28 @@ impl<'ctx> Codegen<'ctx> {
             .get_terminator()
             .is_none()
         {
-            self.builder.build_return(None).map_err(|e| e.to_string())?;
+            match &fun.ret {
+                Type::Void => {
+                    //void functions are allowed to omit a return, and will implicitly return void at the end of the scope.
+                    self.builder.build_return(None).map_err(|e| e.to_string())?;
+                }
+                _ => {
+                    //for anything else, though, we need to inform the user they missed a return statement,
+                    //or else we'll get undefined behavior from the missing terminator in the generated IR.
+                    return Err(format!(
+                        "Expected function '{}' to return {:?}, but at least one branch is missing a return statement",
+                        fun.name, fun.ret
+                    ));
+                }
+            }
         }
         Ok(())
     }
-    
+
     fn compile_sys(&mut self, sys: &SysDecl) -> Result<(), String> {
         self.variables.clear();
         self.active_query.clear();
+        self.current_fn = None;
 
         let mut param_types: Vec<BasicTypeEnum> = vec![];
         let mut binding_expansions: Vec<(String, Vec<String>)> = vec![];
@@ -284,7 +302,8 @@ impl<'ctx> Codegen<'ctx> {
         for (var_name, queried_types) in &sys.query.bindings {
             let mut ent_comps = Vec::new();
             for t in queried_types {
-                if let Some(comps) = self.archetypes.get(t) { //if any comps are entity names
+                if let Some(comps) = self.archetypes.get(t) {
+                    //if any comps are entity names
                     ent_comps.extend(comps.iter().cloned()); //expand entity name into inner comps
                 } else {
                     ent_comps.push(t.clone()); //otherwise just use
@@ -315,6 +334,7 @@ impl<'ctx> Codegen<'ctx> {
             param_types.iter().map(|t| (*t).into()).collect();
         let fn_type = self.context.void_type().fn_type(&param_meta, false);
         let function = self.module.add_function(&sys.name, fn_type, None);
+        self.current_fn = Some(function);
 
         let entry = self.context.append_basic_block(function, "entry");
         let loop_cond = self.context.append_basic_block(function, "loop.cond");
@@ -401,20 +421,22 @@ impl<'ctx> Codegen<'ctx> {
             self.compile_stmt(stmt)?;
         }
 
-        let next_idx = self
-            .builder
-            .build_int_add(
-                current_idx,
-                self.context.i64_type().const_int(1, false),
-                "next_i",
-            )
-            .map_err(|e| e.to_string())?;
-        self.builder
-            .build_store(index_ptr, next_idx)
-            .map_err(|e| e.to_string())?;
-        self.builder
-            .build_unconditional_branch(loop_cond)
-            .map_err(|e| e.to_string())?;
+  if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            let next_idx = self
+                .builder
+                .build_int_add(
+                    current_idx,
+                    self.context.i64_type().const_int(1, false),
+                    "next_i",
+                )
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(index_ptr, next_idx)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_cond)
+                .map_err(|e| e.to_string())?;
+        }
 
         self.builder.position_at_end(loop_end);
         self.builder.build_return(None).map_err(|e| e.to_string())?;
@@ -436,6 +458,11 @@ impl<'ctx> Codegen<'ctx> {
                     .map(|_| ())
             }
             Stmt::Return(expr) => {
+
+                if !self.active_query.is_empty() {
+                    return Err("Cannot return values from systems".into());
+                }
+
                 let ret_val = match expr {
                     Some(e) => Some(self.compile_expr(e)?),
                     None => None,
@@ -446,10 +473,7 @@ impl<'ctx> Codegen<'ctx> {
                     .map_err(|e| e.to_string())
                     .map(|_| ())
             }
-            Stmt::Expr(expr) => {
-                self.compile_expr(expr)?;
-                Ok(())
-            }
+
             Stmt::Assign { target, value } => {
                 let ptr = self.compile_lvalue(target)?;
                 let val = self.compile_expr(value)?;
@@ -457,6 +481,77 @@ impl<'ctx> Codegen<'ctx> {
                     .build_store(ptr, val)
                     .map_err(|e| e.to_string())
                     .map(|_| ())
+            }
+            Stmt::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                //get current function to attach blocks to
+                let function = self.current_fn.ok_or("Cannot use if in global scope")?;
+
+                //initialize the three possible blocks: Then, Else, and End (what happens unconditionally after the if resolves)
+                let then_bb = self.context.append_basic_block(function, "if.then");
+                let else_bb = self.context.append_basic_block(function, "if.else");
+                let end_bb = self.context.append_basic_block(function, "if.end");
+
+                //evaluate the condition, which should give us an i1 (bool) value
+                let cond_val = self.compile_expr(condition)?.into_int_value();
+
+                //now we branch. if true, go to then_bb, if false, go to else_bb
+                self.builder
+                    .build_conditional_branch(cond_val, then_bb, else_bb)
+                    .map_err(|e| e.to_string())?;
+
+                //compile the "then" block
+                self.builder.position_at_end(then_bb);
+                for stmt in then_body {
+                    self.compile_stmt(stmt)?;
+                }
+                //jump to end block after finishing "then" to avoid fallthrough to "else"
+                //(unless the user already ended the block with a return)
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
+                    self.builder
+                        .build_unconditional_branch(end_bb)
+                        .map_err(|e| e.to_string())?;
+                }
+
+                //compile the "else" block (if it exists)
+                self.builder.position_at_end(else_bb);
+                if let Some(else_stmts) = else_body {
+                    for stmt in else_stmts {
+                        self.compile_stmt(stmt)?;
+                    }
+                }
+
+                //jump to the end block (even if there was no else) to unify control flow
+                //(unless the user already ended the block with a return)
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
+                    self.builder
+                        .build_unconditional_branch(end_bb)
+                        .map_err(|e| e.to_string())?;
+                }
+
+                //and now the branches have all converged at the end block, so we position
+                //the builder there to continue generating code after the if statement
+                self.builder.position_at_end(end_bb);
+                Ok(())
+            }
+            Stmt::Expr(expr) => {
+                self.compile_expr(expr)?;
+                Ok(())
             }
         }
     }
@@ -616,25 +711,29 @@ impl<'ctx> Codegen<'ctx> {
                         ));
                     }
 
-                    let alloca = self
-                        .builder
-                        .build_alloca(*struct_type, &format!("{}_init", callee))
-                        .map_err(|e| e.to_string())?;
+                    //undef struct to avoid alloca and store calls
+                    let mut struct_val = struct_type.get_undef().as_basic_value_enum();
 
+                    //inject arguments directly into struct fields using insert_value.
+                    //this avoids calling alloca and store for each field.
                     for (i, arg_expr) in args.iter().enumerate() {
                         let val = self.compile_expr(arg_expr)?;
-                        let field_ptr = self
+                        //insert the value directly into the struct
+                        struct_val = self
                             .builder
-                            .build_struct_gep(alloca, i as u32, "init_field")
-                            .map_err(|e| e.to_string())?;
-                        self.builder
-                            .build_store(field_ptr, val)
-                            .map_err(|e| e.to_string())?;
+                            .build_insert_value(
+                                struct_val.into_struct_value(),
+                                val,
+                                i as u32,
+                                "init_field",
+                            )
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum();
                     }
 
-                    return Ok(alloca.as_basic_value_enum());
+                    //return by value
+                    return Ok(struct_val);
                 }
-
                 let func = self
                     .functions
                     .get(callee)
@@ -656,74 +755,165 @@ impl<'ctx> Codegen<'ctx> {
                     .ok_or("Void function used as value".into())
             }
             Expr::Binary { left, op, right } => {
-                let l = self.compile_expr(left)?.into_int_value();
-                let r = self.compile_expr(right)?.into_int_value();
+                let l = self.compile_expr(left)?;
+                let r = self.compile_expr(right)?;
 
-                let result = match op {
-                    BinOp::Add => self
-                        .builder
-                        .build_int_add(l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Sub => self
-                        .builder
-                        .build_int_sub(l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Mul => self
-                        .builder
-                        .build_int_mul(l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Div => self
-                        .builder
-                        .build_int_signed_div(l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Eq => self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::EQ, l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Neq => self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::NE, l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Lt => self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::SLT, l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Gt => self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::SGT, l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Lte => self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::SLE, l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Gte => self
-                        .builder
-                        .build_int_compare(inkwell::IntPredicate::SGE, l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::And => self
-                        .builder
-                        .build_and(l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                    BinOp::Or => self
-                        .builder
-                        .build_or(l, r, "tmp")
-                        .map_err(|e| e.to_string())?,
-                };
-                Ok(result.as_basic_value_enum())
+                //are we doing int operations or float operations?
+                if l.is_float_value() && r.is_float_value() {
+                    let l = l.into_float_value();
+                    let r = r.into_float_value();
+
+                    let result = match op {
+                        //comparisons first (all return an i1 bool)
+                        BinOp::Eq => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::OEQ, l, r, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum(),
+                        BinOp::Neq => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::ONE, l, r, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum(),
+                        BinOp::Lt => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::OLT, l, r, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum(),
+                        BinOp::Gt => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::OGT, l, r, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum(),
+                        BinOp::Lte => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::OLE, l, r, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum(),
+                        BinOp::Gte => self
+                            .builder
+                            .build_float_compare(inkwell::FloatPredicate::OGE, l, r, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum(),
+
+                        //then math ops, which return floats
+                        _ => {
+                            let math_val = match op {
+                                BinOp::Add => self
+                                    .builder
+                                    .build_float_add(l, r, "tmp")
+                                    .map_err(|e| e.to_string())?,
+                                BinOp::Sub => self
+                                    .builder
+                                    .build_float_sub(l, r, "tmp")
+                                    .map_err(|e| e.to_string())?,
+                                BinOp::Mul => self
+                                    .builder
+                                    .build_float_mul(l, r, "tmp")
+                                    .map_err(|e| e.to_string())?,
+                                BinOp::Div => self
+                                    .builder
+                                    .build_float_div(l, r, "tmp")
+                                    .map_err(|e| e.to_string())?,
+                                _ => {
+                                    return Err(
+                                        "Cannot use logical operators (&&, ||) on floats".into()
+                                    )
+                                }
+                            };
+                            math_val.as_basic_value_enum()
+                        }
+                    };
+                    Ok(result)
+                } else if l.is_int_value() && r.is_int_value() {
+                    //regular int math
+                    let l = l.into_int_value();
+                    let r = r.into_int_value();
+
+                    let result = match op {
+                        BinOp::Add => self
+                            .builder
+                            .build_int_add(l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Sub => self
+                            .builder
+                            .build_int_sub(l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Mul => self
+                            .builder
+                            .build_int_mul(l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Div => self
+                            .builder
+                            .build_int_signed_div(l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Eq => self
+                            .builder
+                            .build_int_compare(inkwell::IntPredicate::EQ, l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Neq => self
+                            .builder
+                            .build_int_compare(inkwell::IntPredicate::NE, l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Lt => self
+                            .builder
+                            .build_int_compare(inkwell::IntPredicate::SLT, l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Gt => self
+                            .builder
+                            .build_int_compare(inkwell::IntPredicate::SGT, l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Lte => self
+                            .builder
+                            .build_int_compare(inkwell::IntPredicate::SLE, l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Gte => self
+                            .builder
+                            .build_int_compare(inkwell::IntPredicate::SGE, l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::And => self
+                            .builder
+                            .build_and(l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                        BinOp::Or => self
+                            .builder
+                            .build_or(l, r, "tmp")
+                            .map_err(|e| e.to_string())?,
+                    };
+                    Ok(result.as_basic_value_enum())
+                } else {
+                    Err("Type mismatch in binary operation (cannot mix int and float without casting)".into())
+                }
             }
             Expr::Unary { op, expr: inner } => {
-                let val = self.compile_expr(inner)?.into_int_value();
-                match op {
-                    UnOp::Neg => Ok(self
-                        .builder
-                        .build_int_neg(val, "tmp")
-                        .map_err(|e| e.to_string())?
-                        .as_basic_value_enum()),
-                    UnOp::Not => Ok(self
-                        .builder
-                        .build_not(val, "tmp")
-                        .map_err(|e| e.to_string())?
-                        .as_basic_value_enum()),
+                let val = self.compile_expr(inner)?;
+
+                if val.is_float_value() {
+                    let f = val.into_float_value();
+                    match op {
+                        UnOp::Neg => Ok(self
+                            .builder
+                            .build_float_neg(f, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum()),
+                        UnOp::Not => Err("Cannot use logical NOT on a float".into()),
+                    }
+                } else if val.is_int_value() {
+                    let v = val.into_int_value();
+                    match op {
+                        UnOp::Neg => Ok(self
+                            .builder
+                            .build_int_neg(v, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum()),
+                        UnOp::Not => Ok(self
+                            .builder
+                            .build_not(v, "tmp")
+                            .map_err(|e| e.to_string())?
+                            .as_basic_value_enum()),
+                    }
+                } else {
+                    Err("Invalid type for unary operation".into())
                 }
             }
             Expr::FieldAccess { object, field } => {
@@ -750,17 +940,9 @@ impl<'ctx> Codegen<'ctx> {
                                     )
                                     .map_err(|e| e.to_string())?
                             };
-
-                            let (comp_name, _) = self.find_component_for_field(field)?;
-                            let field_idx = self.get_field_index(&comp_name, field)?;
-                            let field_ptr = self
-                                .builder
-                                .build_struct_gep(entity_comp_ptr, field_idx, "field_ptr")
-                                .map_err(|e| e.to_string())?;
-
                             return self
                                 .builder
-                                .build_load(field_ptr, field)
+                                .build_load(entity_comp_ptr, field)
                                 .map_err(|e| e.to_string());
                         }
                     }

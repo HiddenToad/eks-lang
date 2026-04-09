@@ -40,16 +40,16 @@ pub enum Decl {
 
 //let x = val;
 #[derive(Debug)]
-pub struct LetDecl { 
+pub struct LetDecl {
     pub name: String, //x
     pub value: Expr,  //val
-    pub span: Span, 
+    pub span: Span,
 }
 
 //comp Foo(a: int, b: int);
 #[derive(Debug, Clone)]
 pub struct CompDecl {
-    pub name: String, //Foo
+    pub name: String,       //Foo
     pub fields: Vec<Field>, //[(a, int), (b, int)]
     pub span: Span,
 }
@@ -58,13 +58,13 @@ pub struct CompDecl {
 #[derive(Debug, Clone)]
 pub struct Field {
     pub name: String, //a
-    pub ty: Type, //int
+    pub ty: Type,     //int
 }
 
 //ent Baz(Foo, Bar);
 #[derive(Debug)]
 pub struct EntDecl {
-    pub name: String, //Baz
+    pub name: String,       //Baz
     pub comps: Vec<String>, //[Foo, Bar]
     pub span: Span,
 }
@@ -74,10 +74,10 @@ pub struct EntDecl {
 //}
 #[derive(Debug)]
 pub struct FunDecl {
-    pub name: String, //truncate
+    pub name: String,       //truncate
     pub params: Vec<Param>, //[(a, float)]
-    pub ret: Type,  //int
-    pub body: Vec<Stmt>, //[Return(Some(Call(int, [Ident(a)])))]
+    pub ret: Type,          //int
+    pub body: Vec<Stmt>,    //[Return(Some(Call(int, [Ident(a)])))]
     pub span: Span,
 }
 
@@ -86,20 +86,19 @@ pub struct FunDecl {
 #[derive(Debug)]
 pub struct Param {
     pub name: String, //arg
-    pub ty: Type, //string
+    pub ty: Type,     //string
 }
 
 //[q : ent(Foo, Bar)]
-//sys(void) scale_foos_by_bars(scale: float){
+//sys scale_foos_by_bars(scale: float){
 //  q.foo.value *= q.bar.value;
 //}
 #[derive(Debug)]
 pub struct SysDecl {
-    pub query: Query, //[(q, [Foo, Bar])]
-    pub name: String, //scale_foos_by_bars
+    pub query: Query,       //[(q, [Foo, Bar])]
+    pub name: String,       //scale_foos_by_bars
     pub params: Vec<Param>, //[(scale, float)]
-    pub ret: Type, //void
-    pub body: Vec<Stmt>, //[Binary(FieldAccess(...), MulAssn, FieldAccess(...))]
+    pub body: Vec<Stmt>,    //[Binary(FieldAccess(...), MulAssn, FieldAccess(...))]
     pub span: Span,
 }
 
@@ -113,11 +112,23 @@ pub struct Query {
 //foo = 6;
 //return true;
 //9 + 6
+//if true { ... } else { ... }
 #[derive(Debug)]
 pub enum Stmt {
-    Let { name: String, value: Expr }, //foo, 5
-    Assign { target: LValue, value: Expr }, //foo, 6
+    Let {
+        name: String,
+        value: Expr,
+    }, //foo, 5
+    Assign {
+        target: LValue,
+        value: Expr,
+    }, //foo, 6
     Return(Option<Expr>), //Some(true)
+    If {
+        condition: Expr,              //true
+        then_body: Vec<Stmt>,         //...
+        else_body: Option<Vec<Stmt>>, //...
+    },
     Expr(Expr), //Binary(9, Add, 6)
 }
 
@@ -125,36 +136,39 @@ pub enum Stmt {
 //guy.pos
 #[derive(Debug)]
 pub enum LValue {
-    Ident(String), //guy
+    Ident(String),                                      //guy
     FieldAccess { object: Box<LValue>, field: String }, //guy, pos
 }
 
 #[derive(Debug)]
 pub enum Expr {
-    Ident(String), //x
-    Int(i64), //10
-    Float(f64), //0.5
+    Ident(String),         //x
+    Int(i64),              //10
+    Float(f64),            //0.5
     StringLiteral(String), //"hi"
-    Bool(bool), //true
-    FieldAccess { //x.y
+    Bool(bool),            //true
+    FieldAccess {
+        //x.y
         object: Box<Expr>, //x
-        field: String, //y
+        field: String,     //y
     },
-    Call { //f(x, y)
-        callee: String,//f
-        args: Vec<Expr>,//[x, y]
+    Call {
+        //f(x, y)
+        callee: String,  //f
+        args: Vec<Expr>, //[x, y]
     },
-    Binary { // 5 > 3
-        left: Box<Expr>, //5
-        op: BinOp, //GT
+    Binary {
+        // 5 > 3
+        left: Box<Expr>,  //5
+        op: BinOp,        //GT
         right: Box<Expr>, //3
     },
-    Unary { // !false
-        op: UnOp, //Not
+    Unary {
+        // !false
+        op: UnOp,        //Not
         expr: Box<Expr>, //false
     },
 }
-
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {
@@ -190,7 +204,6 @@ fn precedence(op: BinOp) -> u8 {
     }
 }
 
-
 fn is_binary_op(token: &Token) -> Option<BinOp> {
     match token {
         Token::Plus => Some(BinOp::Add),
@@ -212,7 +225,7 @@ fn is_binary_op(token: &Token) -> Option<BinOp> {
 pub struct Parser {
     //all tokens
     tokens: Vec<SpannedToken>,
-    
+
     //cursor into tomens
     pos: usize,
 }
@@ -497,9 +510,7 @@ impl Parser {
         self.expect(&Token::RBracket)?;
         self.expect(&Token::Sys)?;
 
-        self.expect(&Token::LParen)?;
-        let ret = self.parse_return_type()?;
-        self.expect(&Token::RParen)?;
+ 
 
         let (name, _) = self.expect_ident()?;
         let params = self.parse_params()?;
@@ -509,7 +520,6 @@ impl Parser {
             query: Query { bindings },
             name,
             params,
-            ret,
             span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
             body,
         })
@@ -551,6 +561,24 @@ impl Parser {
                     Ok(Stmt::Return(Some(expr)))
                 }
             }
+            Token::If => {
+                self.advance();
+                let condition = self.parse_expr()?;
+                let then_body = self.parse_block()?;
+
+                let else_body = if self.peek() == &Token::Else {
+                    self.advance();
+                    Some(self.parse_block()?)
+                } else {
+                    None
+                };
+
+                Ok(Stmt::If {
+                    condition,
+                    then_body,
+                    else_body,
+                })
+            }
             _ => {
                 let expr = self.parse_expr()?;
 
@@ -559,8 +587,7 @@ impl Parser {
                     let value = self.parse_expr()?;
                     self.expect(&Token::Semicolon)?;
 
-                    //get assignable lvalue from 
-                    //arbitrary expr 
+                    //get assignable lvalue from arbitrary expr
                     //(in practice Ident or FieldAccess)
                     let target = expr_to_lvalue(expr)?;
                     Ok(Stmt::Assign { target, value })

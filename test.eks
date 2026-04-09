@@ -7,7 +7,7 @@ fun(Area) doubled (a: Area) { return Area(a.w*2, a.h * 2); }
 
 
 [r: Rect]
-sys(void) set_area_w_2(){
-    r.area.w = 2;
+sys double_areas(){
+    r.area = doubled(r.area);
 } 
 
