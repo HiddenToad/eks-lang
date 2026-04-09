@@ -171,8 +171,8 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 Token::StringLiteral(s),
                 Span::new(start, start + len + 2, start_line, start_col),
             ));
-        } else if c.is_ascii_digit() || c == '.'{ //allows leading decimal
-            let num_str = peek_while(&mut chars, |c| c.1.is_ascii_digit() || c.1 == '.');
+        } else if c.is_ascii_digit() { //no leading decimal
+            let num_str = peek_while(&mut chars, |(_, c)| c.is_ascii_digit() || c == &'.');
             update_state_for_str(&mut state, &num_str);
             let span = Span::new(start, start + num_str.len(), start_line, start_col);
 
@@ -208,6 +208,9 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 "return" => Token::Return,
                 "true" => Token::True,
                 "false" => Token::False,
+                "and" => Token::And,
+                "or" => Token::Or,
+                "not" => Token::Not,
                 _ => Token::Ident(ident),
             };
             tokens.push(SpannedToken::new(token, span));
