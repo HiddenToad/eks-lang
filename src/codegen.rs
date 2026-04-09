@@ -48,6 +48,9 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     pub fn compile(&mut self, program: &Program) -> Result<(), String> {
+        //1st pass: just read decls and register names
+        //This ensures that by the time we're compiling actual
+        //statements, we know all the user definitions already.
         for decl in &program.decls {
             match decl {
                 Decl::Comp(comp) => self.register_comp(comp)?,
@@ -56,6 +59,9 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        //2nd pass: now that we've registered all the 
+        //comps and ents, we can compile the actual behavior
+        //of the program. 
         for decl in &program.decls {
             match decl {
                 Decl::Let(let_decl) => self.compile_global_let(let_decl)?,
@@ -67,6 +73,12 @@ impl<'ctx> Codegen<'ctx> {
 
         Ok(())
     }
+    
+    //optimization function. this makes IR generation
+    //avoid passing along unused components. If an entity
+    //with 5 comps is queries, but only 2 of those are read or written
+    //in the body of the sys, the other 3 will never be passed
+    //or iterated, saving memory and time.
     fn extract_required_components(
         &self,
         body: &[Stmt],
@@ -147,6 +159,9 @@ impl<'ctx> Codegen<'ctx> {
         required
     }
 
+    //comps are registered as LLVM structs, and can be used
+    //just like a standard constructable type
+    //they are also stored by the compiler for queries
     fn register_comp(&mut self, comp: &CompDecl) -> Result<(), String> {
         let mut field_types = vec![];
         for field in &comp.fields {
@@ -160,6 +175,9 @@ impl<'ctx> Codegen<'ctx> {
         Ok(())
     }
 
+    //ents actually don't directly emit codegen,
+    //they're just stored as shortcuts for comp lists.
+    //eventually, ents will be spawnable as well.
     fn register_ent(&mut self, ent: &EntDecl) -> Result<(), String> {
         for comp_name in &ent.comps {
             if !self.comp_types.contains_key(comp_name) {
@@ -173,6 +191,7 @@ impl<'ctx> Codegen<'ctx> {
         Ok(())
     }
 
+    //convert an Eks type into an LLVM type 
     fn resolve_type(&self, ty: &Type) -> Result<BasicTypeEnum<'ctx>, String> {
         match ty {
             Type::Int => Ok(self.context.i64_type().into()),
@@ -254,21 +273,21 @@ impl<'ctx> Codegen<'ctx> {
         }
         Ok(())
     }
+    
     fn compile_sys(&mut self, sys: &SysDecl) -> Result<(), String> {
         self.variables.clear();
         self.active_query.clear();
 
         let mut param_types: Vec<BasicTypeEnum> = vec![];
-
-        let mut binding_expansions: Vec<(String, Vec<String>)> = Vec::new();
+        let mut binding_expansions: Vec<(String, Vec<String>)> = vec![];
 
         for (var_name, queried_types) in &sys.query.bindings {
             let mut ent_comps = Vec::new();
             for t in queried_types {
-                if let Some(comps) = self.archetypes.get(t) {
-                    ent_comps.extend(comps.iter().cloned());
+                if let Some(comps) = self.archetypes.get(t) { //if any comps are entity names
+                    ent_comps.extend(comps.iter().cloned()); //expand entity name into inner comps
                 } else {
-                    ent_comps.push(t.clone());
+                    ent_comps.push(t.clone()); //otherwise just use
                 }
             }
 
