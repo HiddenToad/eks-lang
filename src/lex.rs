@@ -79,11 +79,11 @@ pub enum Token {
     Slash,
     Lt,
     Gt,
-    Not, //!
+    Not, // !
 
     // Two char symbols
     Eq, //==
-    Neq, //!=
+    Neq, // !=
     Lte, //<=
     Gte, //>=
     And, //&&
@@ -171,7 +171,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 Token::StringLiteral(s),
                 Span::new(start, start + len + 2, start_line, start_col),
             ));
-        } else if c.is_ascii_digit() || c == '.' //allows leading decimal{
+        } else if c.is_ascii_digit() || c == '.'{ //allows leading decimal
             let num_str = peek_while(&mut chars, |c| c.1.is_ascii_digit() || c.1 == '.');
             update_state_for_str(&mut state, &num_str);
             let span = Span::new(start, start + num_str.len(), start_line, start_col);
@@ -218,13 +218,13 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new( //==
+                tokens.push(SpannedToken::new( // ==
                     Token::Eq,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new( //=
+                tokens.push(SpannedToken::new( // =
                     Token::Assign,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
@@ -234,13 +234,13 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new( //!=
+                tokens.push(SpannedToken::new( // !=
                     Token::Neq,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new( //!
+                tokens.push(SpannedToken::new( // !
                     Token::Not,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
@@ -338,7 +338,6 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             ));
         }
     }
-
     //EOF token uses the final state
     //This way if there's an "unexpected EOF" error,
     //It will correctly point to the end of the file.
