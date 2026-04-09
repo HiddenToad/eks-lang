@@ -79,7 +79,7 @@ pub enum Token {
     Slash,
     Lt,
     Gt,
-    Not,
+    Not, //!
 
     // Two char symbols
     Eq, //==
@@ -96,6 +96,7 @@ pub enum Token {
     Sys,
     Let,
     IntType,
+    FloatType,
     StringType,
     VoidType,
     BoolType,
@@ -103,9 +104,10 @@ pub enum Token {
     True,
     False,
 
-    EOF,
+    EOF, //special token to mark end of input
 }
 
+//Types. Custom is user-defined (comp)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
@@ -116,7 +118,8 @@ pub enum Type {
     Custom(String),
 }
 
-// Helper to update line/col state based on a consumed string
+// Helper to update line/col
+//Increments the line# when newline encountered
 fn update_state_for_str(state: &mut (usize, usize), s: &str) {
     for c in s.chars() {
         if c == '\n' {
@@ -132,10 +135,13 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
     let mut tokens = vec![];
     let mut chars = text.char_indices().peekable();
 
-    // State: (line, col)
+    //(line, col)
     let mut state = (1usize, 1usize);
 
+    
     while let Some(&(idx, c)) = chars.peek() {
+        //whitespace is ignored semantically
+        //just increments Span values
         if c.is_whitespace() {
             chars.next();
             if c == '\n' {
@@ -151,36 +157,39 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
         let start_line = state.0;
         let start_col = state.1;
 
+        //encountered string literal
         if c == '"' {
-            chars.next();
-            state.1 += 1; // opening quote
-            let s = peek_while(&mut chars, |c| c.1 != '"');
-            update_state_for_str(&mut state, &s);
-            chars.next();
-            state.1 += 1; // closing quote
+            chars.next(); //eat open quote
+            state.1 += 1; //record opening quote
+            let s = peek_while(&mut chars, |c| c.1 != '"'); //eat until closing quote
+            update_state_for_str(&mut state, &s); 
+            chars.next(); //eat close quote
+            state.1 += 1; //record closing quote
 
             let len = s.len();
             tokens.push(SpannedToken::new(
                 Token::StringLiteral(s),
                 Span::new(start, start + len + 2, start_line, start_col),
             ));
-        } else if c.is_ascii_digit() {
+        } else if c.is_ascii_digit() || c == '.' //allows leading decimal{
             let num_str = peek_while(&mut chars, |c| c.1.is_ascii_digit() || c.1 == '.');
             update_state_for_str(&mut state, &num_str);
             let span = Span::new(start, start + num_str.len(), start_line, start_col);
 
             if num_str.contains('.') {
+                //float literal
                 tokens.push(SpannedToken::new(
                     Token::Float(num_str.parse().expect("Invalid float")),
                     span,
                 ));
             } else {
+                // int literal
                 tokens.push(SpannedToken::new(
                     Token::Int(num_str.parse().expect("Invalid int")),
                     span,
                 ));
             }
-        } else if c.is_alphabetic() || c == '_' {
+        } else if c.is_alphabetic() || c == '_' { //ident or keyword
             let ident = peek_while(&mut chars, |c| c.1.is_alphanumeric() || c.1 == '_');
             update_state_for_str(&mut state, &ident);
             let span = Span::new(start, start + ident.len(), start_line, start_col);
@@ -192,6 +201,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 "sys" => Token::Sys,
                 "let" => Token::Let,
                 "int" => Token::IntType,
+                "float" => Token::FloatType,
                 "string" => Token::StringType,
                 "void" => Token::VoidType,
                 "bool" => Token::BoolType,
@@ -202,72 +212,72 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             };
             tokens.push(SpannedToken::new(token, span));
         }
-        // Two-character operators
-        else if c == '=' {
+        //Two-character operators
+        else if c == '=' { //distinguish between == and =
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new( //==
                     Token::Eq,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new( //=
                     Token::Assign,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '!' {
+        } else if c == '!' {//distinguish between ! and !=
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new( //!=
                     Token::Neq,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new( //!
                     Token::Not,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '<' {
+        } else if c == '<' { //distinguish btwn < and <=
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new( //<=
                     Token::Lte,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new(//<
                     Token::Lt,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '>' {
+        } else if c == '>' { //distinguish between > and >=
             chars.next();
             if matches!(chars.peek(), Some((_, '='))) {
                 chars.next();
                 state.1 += 2;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new(//>=
                     Token::Gte,
                     Span::new(start, start + 2, start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
-                tokens.push(SpannedToken::new(
+                tokens.push(SpannedToken::new(//>
                     Token::Gt,
                     Span::new(start, start + 1, start_line, start_col),
                 ));
             }
-        } else if c == '&' {
+        } else if c == '&' { //&&
             chars.next();
             if matches!(chars.peek(), Some((_, '&'))) {
                 chars.next();
@@ -282,7 +292,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                     start_line, start_col
                 );
             }
-        } else if c == '|' {
+        } else if c == '|' { //||
             chars.next();
             if matches!(chars.peek(), Some((_, '|'))) {
                 chars.next();
@@ -329,7 +339,9 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
         }
     }
 
-    // EOF token uses the final state
+    //EOF token uses the final state
+    //This way if there's an "unexpected EOF" error,
+    //It will correctly point to the end of the file.
     tokens.push(SpannedToken::new(
         Token::EOF,
         Span::new(text.len(), text.len(), state.0, state.1),
