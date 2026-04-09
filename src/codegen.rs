@@ -31,7 +31,7 @@ pub struct Codegen<'ctx> {
 
 impl<'ctx> Codegen<'ctx> {
     pub fn new(context: &'ctx Context) -> Self {
-        let module = context.create_module("ecs_lang");
+        let module = context.create_module("EksLang");
         let builder = context.create_builder();
 
         Self {
