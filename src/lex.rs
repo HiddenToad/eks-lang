@@ -86,8 +86,8 @@ pub enum Token {
     Neq, // !=
     Lte, //<=
     Gte, //>=
-    And, //&&
-    Or,  //||
+    And, //&& and
+    Or,  //|| or
 
     //Keywords
     Comp,
