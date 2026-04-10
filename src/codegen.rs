@@ -78,7 +78,7 @@ impl<'ctx> Codegen<'ctx> {
 
     //optimization function. this makes IR generation
     //avoid passing along unused components. If an entity
-    //with 5 comps is queries, but only 2 of those are read or written
+    //with 5 comps is queried, but only 2 of those comps are read or written
     //in the body of the sys, the other 3 will never be passed
     //or iterated, saving memory and time.
     fn extract_required_components(
