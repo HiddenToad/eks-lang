@@ -4,6 +4,8 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
+    passes::PassManager,
+    OptimizationLevel,
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, PointerValue},
     AddressSpace,
@@ -28,13 +30,22 @@ pub struct Codegen<'ctx> {
     variables: HashMap<String, PointerValue<'ctx>>,
     active_query: HashMap<String, QueryVar<'ctx>>,
     current_fn: Option<FunctionValue<'ctx>>,
+    pass_manager: PassManager<FunctionValue<'ctx>>,
 }
 
 impl<'ctx> Codegen<'ctx> {
     pub fn new(context: &'ctx Context) -> Self {
         let module = context.create_module("EksLang");
         let builder = context.create_builder();
-
+        let pm = PassManager::create(&module);
+        pm.add_instruction_combining_pass();
+        pm.add_reassociate_pass();
+        pm.add_gvn_pass(); 
+        pm.add_cfg_simplification_pass();
+        pm.add_basic_alias_analysis_pass();
+        pm.add_promote_memory_to_register_pass();
+        pm.add_loop_vectorize_pass();
+        pm.add_scalar_repl_aggregates_pass();
         Self {
             context,
             module,
@@ -46,6 +57,7 @@ impl<'ctx> Codegen<'ctx> {
             variables: HashMap::new(),
             active_query: HashMap::new(),
             current_fn: None,
+            pass_manager: pm,
         }
     }
 
@@ -72,6 +84,15 @@ impl<'ctx> Codegen<'ctx> {
                 _ => {}
             }
         }
+
+        self.pass_manager.initialize();
+        let mut func = self.module.get_first_function();
+        while let Some(f) = func {
+            self.pass_manager.run_on(&f);
+            func = f.get_next_function();
+        }
+        
+        self.pass_manager.finalize();
 
         Ok(())
     }
@@ -454,8 +475,10 @@ impl<'ctx> Codegen<'ctx> {
                     .map_err(|e| e.to_string())?;
                 self.builder
                     .build_store(alloca, val)
-                    .map_err(|e| e.to_string())
-                    .map(|_| ())
+                    .map_err(|e| e.to_string())?;
+
+                self.variables.insert(name.clone(), alloca);
+                Ok(())
             }
             Stmt::Return(expr) => {
 

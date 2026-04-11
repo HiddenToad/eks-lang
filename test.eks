@@ -1,13 +1,8 @@
 comp Area(w: int, h: int);
-comp Position(x: int, y: int);
 
-ent Rect(Position, Area);
+fun(Area) doubled(a: Area) { return Area(a.w * 2, a.h * 2); }
 
-fun(Area) doubled (a: Area) { return Area(a.w*2, a.h * 2); }
-
-
-[r: Rect]
-sys double_areas(){
-    r.area = doubled(r.area);
-} 
-
+fun(void) main() {
+    let result = doubled(Area(5, 10));
+    return result.w; 
+}
