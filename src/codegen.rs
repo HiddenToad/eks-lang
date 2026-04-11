@@ -7,7 +7,8 @@ use inkwell::{
     passes::PassManager,
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, PointerValue},
-    AddressSpace, OptimizationLevel,
+    targets::{InitializationConfig, Target, TargetMachine, FileType},
+    AddressSpace,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -45,6 +46,7 @@ impl<'ctx> Codegen<'ctx> {
         pm.add_promote_memory_to_register_pass();
         pm.add_loop_vectorize_pass();
         pm.add_scalar_repl_aggregates_pass();
+
         Self {
             context,
             module,
@@ -260,11 +262,17 @@ impl<'ctx> Codegen<'ctx> {
         let param_meta: Vec<BasicMetadataTypeEnum> =
             param_types.iter().map(|t| (*t).into()).collect();
 
-        let fn_type = match &fun.ret {
-            Type::Void => self.context.void_type().fn_type(&param_meta, false),
-            _ => self.resolve_type(&fun.ret)?.fn_type(&param_meta, false),
+        //main returns int because of os requirements, but since it's an
+        //implementation detail, we just allow them to declare it void and 
+        //not think about the return code if they don't want to
+        let fn_type = if fun.name == "main" && matches!(fun.ret, Type::Void) {
+            self.context.i32_type().fn_type(&param_meta, false)
+        } else {
+            match &fun.ret {
+                Type::Void => self.context.void_type().fn_type(&param_meta, false),
+                _ => self.resolve_type(&fun.ret)?.fn_type(&param_meta, false),
+            }
         };
-
         let function = self.module.add_function(&fun.name, fn_type, None);
         self.functions.insert(fun.name.clone(), function);
         self.current_fn = Some(function);

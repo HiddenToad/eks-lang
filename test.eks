@@ -2,7 +2,7 @@ comp Area(w: int, h: int);
 
 fun(Area) doubled(a: Area) { return Area(a.w * 2, a.h * 2); }
 
-fun(void) main() {
+fun() main() {
     let result = doubled(Area(5, 10));
-    return result.w; 
+    return result.w * result.h;
 }
