@@ -91,14 +91,14 @@ pub struct Param {
 
 //[q : ent(Foo, Bar)]
 //sys scale_foos_by_bars(scale: float){
-//  q.foo.value *= q.bar.value;
+//  q.foo.value *= q.bar.value * scale;
 //}
 #[derive(Debug)]
 pub struct SysDecl {
     pub query: Query,       //[(q, [Foo, Bar])]
     pub name: String,       //scale_foos_by_bars
     pub params: Vec<Param>, //[(scale, float)]
-    pub body: Vec<Stmt>,    //[Binary(FieldAccess(...), MulAssn, FieldAccess(...))]
+    pub body: Vec<Stmt>,    //[Binary(Binary(FieldAccess(...), MulAssn, FieldAccess(...)), Mul, Ident(scale))]
     pub span: Span,
 }
 
