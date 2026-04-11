@@ -510,8 +510,6 @@ impl Parser {
         self.expect(&Token::RBracket)?;
         self.expect(&Token::Sys)?;
 
- 
-
         let (name, _) = self.expect_ident()?;
         let params = self.parse_params()?;
         let body = self.parse_block()?;

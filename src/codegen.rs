@@ -5,10 +5,9 @@ use inkwell::{
     context::Context,
     module::Module,
     passes::PassManager,
-    OptimizationLevel,
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, PointerValue},
-    AddressSpace,
+    AddressSpace, OptimizationLevel,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -40,7 +39,7 @@ impl<'ctx> Codegen<'ctx> {
         let pm = PassManager::create(&module);
         pm.add_instruction_combining_pass();
         pm.add_reassociate_pass();
-        pm.add_gvn_pass(); 
+        pm.add_gvn_pass();
         pm.add_cfg_simplification_pass();
         pm.add_basic_alias_analysis_pass();
         pm.add_promote_memory_to_register_pass();
@@ -91,7 +90,7 @@ impl<'ctx> Codegen<'ctx> {
             self.pass_manager.run_on(&f);
             func = f.get_next_function();
         }
-        
+
         self.pass_manager.finalize();
 
         Ok(())
@@ -442,7 +441,13 @@ impl<'ctx> Codegen<'ctx> {
             self.compile_stmt(stmt)?;
         }
 
-  if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        if self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
             let next_idx = self
                 .builder
                 .build_int_add(
@@ -481,7 +486,6 @@ impl<'ctx> Codegen<'ctx> {
                 Ok(())
             }
             Stmt::Return(expr) => {
-
                 if !self.active_query.is_empty() {
                     return Err("Cannot return values from systems".into());
                 }
