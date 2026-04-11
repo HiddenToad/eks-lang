@@ -31,10 +31,6 @@ fn main() {
     let context = Context::create();
     let mut codegen = Codegen::new(&context);
 
-    
-   
-
-
     match codegen.compile(&program) {
         Ok(_) => {
             println!("Compilation successful!\n");
@@ -49,17 +45,17 @@ fn main() {
 
     Target::initialize_native(&InitializationConfig::default())
         .expect("Failed to initialize native target");
-    
+
     let target_triple = TargetMachine::get_default_triple();
     let target = Target::from_triple(&target_triple).expect("Failed to get target");
 
     let target_machine = target
         .create_target_machine(
             &target_triple,
-            "generic",         
+            "generic",
             "",
             inkwell::OptimizationLevel::Default, //IR is already optimized, keep default here
-            RelocMode::PIC,             
+            RelocMode::PIC,
             CodeModel::Default,
         )
         .expect("Failed to create target machine");
@@ -69,15 +65,21 @@ fn main() {
         .write_to_file(&codegen.module, FileType::Object, Path::new("target.o"))
         .expect("Failed to write object file");
 
-
     println!("Linking executable...");
     let link_status = std::process::Command::new("cc")
-        .args(["target.o", "-o", env::args().nth(1).unwrap().split(".").next().unwrap()])
+        .args([
+            "target.o",
+            "-o",
+            env::args().nth(1).unwrap().split(".").next().unwrap(),
+        ])
         .status()
         .expect("Failed to run linker (Do you have gcc or clang installed?)");
 
     if link_status.success() {
-        println!("Success! Run it with ./{}", env::args().nth(1).unwrap().split(".").next().unwrap());
+        println!(
+            "Success! Run it with ./{}",
+            env::args().nth(1).unwrap().split(".").next().unwrap()
+        );
     } else {
         eprintln!("Linking failed.");
     }

@@ -98,7 +98,7 @@ pub struct SysDecl {
     pub query: Query,       //[(q, [Foo, Bar])]
     pub name: String,       //scale_foos_by_bars
     pub params: Vec<Param>, //[(scale, float)]
-    pub body: Vec<Stmt>,    //[Binary(Binary(FieldAccess(...), MulAssn, FieldAccess(...)), Mul, Ident(scale))]
+    pub body: Vec<Stmt>, //[Binary(Binary(FieldAccess(...), MulAssn, FieldAccess(...)), Mul, Ident(scale))]
     pub span: Span,
 }
 

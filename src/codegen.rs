@@ -7,7 +7,6 @@ use inkwell::{
     passes::PassManager,
     types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType},
     values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue, PointerValue},
-    targets::{InitializationConfig, Target, TargetMachine, FileType},
     AddressSpace,
 };
 use std::collections::{HashMap, HashSet};
@@ -263,7 +262,7 @@ impl<'ctx> Codegen<'ctx> {
             param_types.iter().map(|t| (*t).into()).collect();
 
         //main returns int because of os requirements, but since it's an
-        //implementation detail, we just allow them to declare it void and 
+        //implementation detail, we just allow them to declare it void and
         //not think about the return code if they don't want to
         let fn_type = if fun.name == "main" && matches!(fun.ret, Type::Void) {
             self.context.i32_type().fn_type(&param_meta, false)
