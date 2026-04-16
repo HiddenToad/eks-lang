@@ -6,8 +6,11 @@ fun() main() {
     let mut a = Area(5, 10);
     a = doubled(a);
     if a.w is 10{
-        if true{
+        if false{
             println("wow");
+        } else if a.h is 20{
+            println("wower");
+            println(a.h is a.w);
         }
     } else {
         println("no math");

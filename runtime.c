@@ -13,3 +13,7 @@ void __eks_print_string(const char* val) {
         printf("%s\n", val);
     }
 }
+
+void __eks_print_bool(int val) {
+    printf("%s\n", val ? "true" : "false");
+}

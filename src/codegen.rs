@@ -51,6 +51,7 @@ impl<'ctx> Codegen<'ctx> {
         let i64_type = context.i64_type();
         let f64_type = context.f64_type();
         let str_type = context.i8_type().ptr_type(AddressSpace::default());
+        let bool_type = context.bool_type();
 
         //intrinsics
         module.add_function(
@@ -66,6 +67,11 @@ impl<'ctx> Codegen<'ctx> {
         module.add_function(
             "__eks_print_string",
             void_type.fn_type(&[str_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "__eks_print_bool",
+            void_type.fn_type(&[bool_type.into()], false),
             None,
         );
 
@@ -319,7 +325,8 @@ impl<'ctx> Codegen<'ctx> {
             self.compile_stmt(stmt)?;
         }
 
-        if self.builder
+        if self
+            .builder
             .get_insert_block()
             .unwrap()
             .get_terminator()
@@ -689,14 +696,15 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
     }
-    fn compile_expr_to_ptr(&mut self, expr: &Expr) -> Result<PointerValue<'ctx>, String> { // Changed to string for easier error formatting
+    fn compile_expr_to_ptr(&mut self, expr: &Expr) -> Result<PointerValue<'ctx>, String> {
+        // Changed to string for easier error formatting
         match expr {
             Expr::Ident(name) => self
                 .variables
                 .get(name)
                 .cloned()
                 .ok_or(format!("Unknown variable {}", name)),
-                
+
             Expr::FieldAccess { object, field } => {
                 // 1. Check if it's an ECS query
                 if let Expr::Ident(var_name) = object.as_ref() {
@@ -730,7 +738,7 @@ impl<'ctx> Codegen<'ctx> {
                 let base_ptr = self.compile_expr_to_ptr(object)?;
                 let (comp_name, _) = self.find_component_for_field(field)?;
                 let field_idx = self.get_field_idx(&comp_name, field)?;
-                
+
                 self.builder
                     .build_struct_gep(base_ptr, field_idx, "field_ptr")
                     .map_err(|e| e.to_string())
@@ -839,7 +847,11 @@ impl<'ctx> Codegen<'ctx> {
                         .ok_or("println does not support this type".to_string())?;
 
                     let backing_fn_name = if val.is_int_value() {
-                        "__eks_print_int"
+                        if val.get_type().into_int_type().get_bit_width() == 1 {
+                            "__eks_print_bool"
+                        } else {
+                            "__eks_print_int"
+                        }
                     } else if val.is_float_value() {
                         "__eks_print_float"
                     } else if val.is_pointer_value() {

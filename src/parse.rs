@@ -543,14 +543,13 @@ impl Parser {
         match self.peek() {
             Token::Let => {
                 self.advance();
-                   let is_mut = if self.peek() == &Token::Mut {
+                let is_mut = if self.peek() == &Token::Mut {
                     self.advance();
                     true
                 } else {
                     false
                 };
                 let (name, _) = self.expect_ident()?;
-             
 
                 self.expect(&Token::Assign)?;
                 let value = self.parse_expr()?;
@@ -579,7 +578,14 @@ impl Parser {
 
                 let else_body = if self.peek() == &Token::Else {
                     self.advance();
-                    Some(self.parse_block()?)
+
+                    //allow else if chains
+                    if self.peek() == &Token::If {
+                        Some(vec![self.parse_stmt()?]) //recursive call to parse_stmt will handle else if
+                    } else {
+                        //regular else block
+                        Some(self.parse_block()?)
+                    }
                 } else {
                     None
                 };
