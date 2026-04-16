@@ -30,6 +30,7 @@ pub struct Codegen<'ctx> {
     active_query: HashMap<String, QueryVar<'ctx>>,
     current_fn: Option<FunctionValue<'ctx>>,
     pass_manager: PassManager<FunctionValue<'ctx>>,
+    mutables: HashSet<String>,
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -80,6 +81,7 @@ impl<'ctx> Codegen<'ctx> {
             active_query: HashMap::new(),
             current_fn: None,
             pass_manager: pm,
+            mutables: HashSet::new(),
         }
     }
 
@@ -273,6 +275,7 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_fun(&mut self, fun: &FunDecl) -> Result<(), String> {
         self.variables.clear();
         self.active_query.clear();
+        self.mutables.clear();
         self.current_fn = None;
 
         let mut param_types: Vec<BasicTypeEnum> = vec![];
@@ -316,8 +319,8 @@ impl<'ctx> Codegen<'ctx> {
             self.compile_stmt(stmt)?;
         }
 
-        if function
-            .get_last_basic_block()
+        if self.builder
+            .get_insert_block()
             .unwrap()
             .get_terminator()
             .is_none()
@@ -343,6 +346,7 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_sys(&mut self, sys: &SysDecl) -> Result<(), String> {
         self.variables.clear();
         self.active_query.clear();
+        self.mutables.clear();
         self.current_fn = None;
 
         let mut param_types: Vec<BasicTypeEnum> = vec![];
@@ -501,7 +505,11 @@ impl<'ctx> Codegen<'ctx> {
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         match stmt {
-            Stmt::Let { name, value } => {
+            Stmt::Let {
+                name,
+                value,
+                is_mut,
+            } => {
                 let val = self.compile_expr(value)?.ok_or_else(|| {
                     "Cannot store result of void expression in variable".to_string()
                 })?;
@@ -514,6 +522,9 @@ impl<'ctx> Codegen<'ctx> {
                     .map_err(|e| e.to_string())?;
 
                 self.variables.insert(name.clone(), alloca);
+                if *is_mut {
+                    self.mutables.insert(name.clone());
+                }
                 Ok(())
             }
             Stmt::Return(expr) => {
@@ -543,6 +554,13 @@ impl<'ctx> Codegen<'ctx> {
                 let val = self.compile_expr(value)?.ok_or::<String>(
                     "Cannot store result of void expression in variable".to_string(),
                 )?;
+
+                if let LValue::Ident(name) = target {
+                    if !self.mutables.contains(name) {
+                        return Err(format!("Cannot assign to immutable variable '{}'", name));
+                    }
+                }
+
                 self.builder
                     .build_store(ptr, val)
                     .map_err(|e| e.to_string())
@@ -663,7 +681,7 @@ impl<'ctx> Codegen<'ctx> {
 
                 let base_ptr = self.compile_lvalue(object)?;
                 let (comp_name, _) = self.find_component_for_field(field)?;
-                let field_idx = self.get_field_index(&comp_name, field)?;
+                let field_idx = self.get_field_idx(&comp_name, field)?;
 
                 self.builder
                     .build_struct_gep(base_ptr, field_idx, "field_ptr")
@@ -671,15 +689,16 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
     }
-
-    fn compile_expr_to_ptr(&mut self, expr: &Expr) -> Result<PointerValue<'ctx>, String> {
+    fn compile_expr_to_ptr(&mut self, expr: &Expr) -> Result<PointerValue<'ctx>, String> { // Changed to string for easier error formatting
         match expr {
             Expr::Ident(name) => self
                 .variables
                 .get(name)
                 .cloned()
                 .ok_or(format!("Unknown variable {}", name)),
+                
             Expr::FieldAccess { object, field } => {
+                // 1. Check if it's an ECS query
                 if let Expr::Ident(var_name) = object.as_ref() {
                     if let Some(query_var) = self.active_query.get(var_name) {
                         let base_array_ptr = query_var
@@ -706,9 +725,12 @@ impl<'ctx> Codegen<'ctx> {
                         }
                     }
                 }
+
+                // 2. Standard struct field access
                 let base_ptr = self.compile_expr_to_ptr(object)?;
                 let (comp_name, _) = self.find_component_for_field(field)?;
-                let field_idx = self.get_field_index(&comp_name, field)?;
+                let field_idx = self.get_field_idx(&comp_name, field)?;
+                
                 self.builder
                     .build_struct_gep(base_ptr, field_idx, "field_ptr")
                     .map_err(|e| e.to_string())
@@ -733,7 +755,7 @@ impl<'ctx> Codegen<'ctx> {
         Err(format!("Unknown field {}", field_name))
     }
 
-    fn get_field_index(&self, comp_name: &str, field_name: &str) -> Result<u32, String> {
+    fn get_field_idx(&self, comp_name: &str, field_name: &str) -> Result<u32, String> {
         let comp_decl = self.comp_decls.get(comp_name).ok_or("Unknown comp")?;
         for (i, field) in comp_decl.fields.iter().enumerate() {
             if field.name == field_name {
@@ -1062,7 +1084,7 @@ impl<'ctx> Codegen<'ctx> {
                 let base_ptr = self.compile_expr_to_ptr(object)?;
 
                 let (comp_name, _) = self.find_component_for_field(field)?;
-                let field_idx = self.get_field_index(&comp_name, field)?;
+                let field_idx = self.get_field_idx(&comp_name, field)?;
 
                 let field_ptr = self
                     .builder

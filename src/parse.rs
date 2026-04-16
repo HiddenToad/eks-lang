@@ -118,6 +118,7 @@ pub enum Stmt {
     Let {
         name: String,
         value: Expr,
+        is_mut: bool,
     }, //foo, 5
     Assign {
         target: LValue,
@@ -542,11 +543,23 @@ impl Parser {
         match self.peek() {
             Token::Let => {
                 self.advance();
+                   let is_mut = if self.peek() == &Token::Mut {
+                    self.advance();
+                    true
+                } else {
+                    false
+                };
                 let (name, _) = self.expect_ident()?;
+             
+
                 self.expect(&Token::Assign)?;
                 let value = self.parse_expr()?;
                 self.expect(&Token::Semicolon)?;
-                Ok(Stmt::Let { name, value })
+                Ok(Stmt::Let {
+                    name,
+                    value,
+                    is_mut,
+                })
             }
             Token::Return => {
                 self.advance();

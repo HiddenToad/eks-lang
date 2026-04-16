@@ -100,6 +100,7 @@ pub enum Token {
     False,
     If,
     Else,
+    Mut,
 
     //types
     IntType,
@@ -218,6 +219,8 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 "not" => Token::Not,
                 "if" => Token::If,
                 "else" => Token::Else,
+                "mut" => Token::Mut,
+                "is" => Token::Eq,
                 _ => Token::Ident(ident),
             };
             tokens.push(SpannedToken::new(token, span));
@@ -351,6 +354,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 '-' => Token::Minus,
                 '*' => Token::Star,
                 '/' => Token::Slash,
+                '!' => Token::Not,
                 _ => panic!(
                     "Unexpected character '{}' at line {}, column {}",
                     c, start_line, start_col
