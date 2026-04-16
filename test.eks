@@ -1,18 +1,11 @@
-comp Area(w: int, h: int);
-
-fun(Area) doubled(a: Area) { return Area(a.w * 2, a.h * 2); }
+fun(int) factorial(n: int){
+    if n <= 0{
+        return 1;
+    } else {
+        return n * factorial(n - 1);
+    }
+}
 
 fun() main() {
-    let mut a = Area(5, 10);
-    a = doubled(a);
-    if a.w is 10{
-        if false{
-            println("wow");
-        } else if a.h is 20{
-            println("wower");
-            println(a.h is a.w);
-        }
-    } else {
-        println("no math");
-    }
+    println(factorial(99));
 }

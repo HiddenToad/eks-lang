@@ -573,7 +573,7 @@ impl<'ctx> Codegen<'ctx> {
                     .map_err(|e| e.to_string())
                     .map(|_| ())
             }
-            Stmt::If {
+                     Stmt::If {
                 condition,
                 then_body,
                 else_body,
@@ -639,9 +639,21 @@ impl<'ctx> Codegen<'ctx> {
                         .map_err(|e| e.to_string())?;
                 }
 
+                //check if both branches ended with a return (or break, etc.)
+                let then_terminated = then_bb.get_terminator().is_some();
+                let else_terminated = else_bb.get_terminator().is_some();
+
                 //and now the branches have all converged at the end block, so we position
                 //the builder there to continue generating code after the if statement
                 self.builder.position_at_end(end_bb);
+                
+                //if both branches terminated, no code can ever reach end_bb.
+                //we must add an 'unreachable' terminator so LLVM doesn't complain
+                //about missing terminators at the end of the function.
+                if then_terminated && else_terminated {
+                    self.builder.build_unreachable().map_err(|e| e.to_string())?;
+                }
+
                 Ok(())
             }
             Stmt::Expr(expr) => {
