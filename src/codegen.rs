@@ -337,7 +337,9 @@ impl<'ctx> Codegen<'ctx> {
                     //void functions are allowed to omit a return, and will implicitly return void at the end of the scope.
                     //however, if this is the "main" function, we must return 0 to satisfy OS requirements for the entry point.
                     if fun.name == "main" {
-                        self.builder.build_return(Some(&self.context.i32_type().const_int(0, false))).map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_return(Some(&self.context.i32_type().const_int(0, false)))
+                            .map_err(|e| e.to_string())?;
                     } else {
                         self.builder.build_return(None).map_err(|e| e.to_string())?;
                     }
@@ -578,7 +580,7 @@ impl<'ctx> Codegen<'ctx> {
                     .map_err(|e| e.to_string())
                     .map(|_| ())
             }
-                     Stmt::If {
+            Stmt::If {
                 condition,
                 then_body,
                 else_body,
@@ -651,12 +653,14 @@ impl<'ctx> Codegen<'ctx> {
                 //and now the branches have all converged at the end block, so we position
                 //the builder there to continue generating code after the if statement
                 self.builder.position_at_end(end_bb);
-                
+
                 //if both branches terminated, no code can ever reach end_bb.
                 //we must add an 'unreachable' terminator so LLVM doesn't complain
                 //about missing terminators at the end of the function.
                 if then_terminated && else_terminated {
-                    self.builder.build_unreachable().map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_unreachable()
+                        .map_err(|e| e.to_string())?;
                 }
 
                 Ok(())
