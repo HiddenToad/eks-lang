@@ -5,20 +5,13 @@ use crate::utils::peek_while;
 //Line : Col is line + column num
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
-    pub start: usize,
-    pub end: usize,
     pub line: usize,
     pub col: usize,
 }
 
 impl Span {
-    pub fn new(start: usize, end: usize, line: usize, col: usize) -> Self {
-        Self {
-            start,
-            end,
-            line,
-            col,
-        }
+    pub fn new(line: usize, col: usize) -> Self {
+        Self { line, col }
     }
 }
 
@@ -157,7 +150,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             continue;
         }
 
-        let start = idx;
+        let _start = idx;
         let start_line = state.0;
         let start_col = state.1;
 
@@ -170,16 +163,16 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             chars.next(); //eat close quote
             state.1 += 1; //record closing quote
 
-            let len = s.len();
+            let _len = s.len();
             tokens.push(SpannedToken::new(
                 Token::StringLiteral(s),
-                Span::new(start, start + len + 2, start_line, start_col),
+                Span::new(start_line, start_col),
             ));
         } else if c.is_ascii_digit() {
             //no leading decimal
             let num_str = peek_while(&mut chars, |(_, c)| c.is_ascii_digit() || c == &'.');
             update_state_for_str(&mut state, &num_str);
-            let span = Span::new(start, start + num_str.len(), start_line, start_col);
+            let span = Span::new(start_line, start_col);
 
             if num_str.contains('.') {
                 //float literal
@@ -198,7 +191,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
             //ident or keyword
             let ident = peek_while(&mut chars, |c| c.1.is_alphanumeric() || c.1 == '_');
             update_state_for_str(&mut state, &ident);
-            let span = Span::new(start, start + ident.len(), start_line, start_col);
+            let span = Span::new(start_line, start_col);
 
             let token = match ident.as_str() {
                 "comp" => Token::Comp,
@@ -235,14 +228,14 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 tokens.push(SpannedToken::new(
                     // ==
                     Token::Eq,
-                    Span::new(start, start + 2, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
                 tokens.push(SpannedToken::new(
                     // =
                     Token::Assign,
-                    Span::new(start, start + 1, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             }
         } else if c == '!' {
@@ -254,14 +247,14 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 tokens.push(SpannedToken::new(
                     // !=
                     Token::Neq,
-                    Span::new(start, start + 2, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
                 tokens.push(SpannedToken::new(
                     // !
                     Token::Not,
-                    Span::new(start, start + 1, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             }
         } else if c == '<' {
@@ -273,14 +266,14 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 tokens.push(SpannedToken::new(
                     //<=
                     Token::Lte,
-                    Span::new(start, start + 2, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
                 tokens.push(SpannedToken::new(
                     //<
                     Token::Lt,
-                    Span::new(start, start + 1, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             }
         } else if c == '>' {
@@ -292,14 +285,14 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 tokens.push(SpannedToken::new(
                     //>=
                     Token::Gte,
-                    Span::new(start, start + 2, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             } else {
                 state.1 += 1;
                 tokens.push(SpannedToken::new(
                     //>
                     Token::Gt,
-                    Span::new(start, start + 1, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             }
         } else if c == '&' {
@@ -310,7 +303,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 state.1 += 2;
                 tokens.push(SpannedToken::new(
                     Token::And,
-                    Span::new(start, start + 2, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             } else {
                 panic!(
@@ -326,7 +319,7 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                 state.1 += 2;
                 tokens.push(SpannedToken::new(
                     Token::Or,
-                    Span::new(start, start + 2, start_line, start_col),
+                    Span::new(start_line, start_col),
                 ));
             } else {
                 panic!(
@@ -360,18 +353,12 @@ pub fn lex(text: String) -> Vec<SpannedToken> {
                     c, start_line, start_col
                 ),
             };
-            tokens.push(SpannedToken::new(
-                tok,
-                Span::new(start, start + 1, start_line, start_col),
-            ));
+            tokens.push(SpannedToken::new(tok, Span::new(start_line, start_col)));
         }
     }
     //EOF token uses the final state
     //This way if there's an "unexpected EOF" error,
     //It will correctly point to the end of the file.
-    tokens.push(SpannedToken::new(
-        Token::EOF,
-        Span::new(text.len(), text.len(), state.0, state.1),
-    ));
+    tokens.push(SpannedToken::new(Token::EOF, Span::new(state.0, state.1)));
     tokens
 }

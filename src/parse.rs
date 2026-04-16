@@ -403,7 +403,7 @@ impl Parser {
     }
 
     fn parse_comp_decl(&mut self) -> ParseResult<CompDecl> {
-        let start = self.peek_span();
+        let _start = self.peek_span();
         self.expect(&Token::Comp)?;
         let (name, _) = self.expect_ident()?;
 
@@ -438,12 +438,12 @@ impl Parser {
         Ok(CompDecl {
             name,
             fields,
-            span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
+            span: Span::new(0, 0),
         })
     }
 
     fn parse_ent_decl(&mut self) -> ParseResult<EntDecl> {
-        let start = self.peek_span();
+        let _start = self.peek_span();
         self.expect(&Token::Ent)?;
         let (name, _) = self.expect_ident()?;
 
@@ -455,12 +455,12 @@ impl Parser {
         Ok(EntDecl {
             name,
             comps,
-            span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
+            span: Span::new(0, 0),
         })
     }
 
     fn parse_fun_decl(&mut self) -> ParseResult<FunDecl> {
-        let start = self.peek_span();
+        let _start = self.peek_span();
         self.expect(&Token::Fun)?;
 
         self.expect(&Token::LParen)?;
@@ -476,12 +476,12 @@ impl Parser {
             params,
             ret,
             body,
-            span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
+            span: Span::new(0, 0),
         })
     }
 
     fn parse_sys_decl(&mut self) -> ParseResult<SysDecl> {
-        let start = self.peek_span();
+        let _start = self.peek_span();
         self.expect(&Token::LBracket)?;
 
         //parse bindings: [q: EntName] or [q: ent(Comp1, Comp2)]
@@ -519,13 +519,13 @@ impl Parser {
             query: Query { bindings },
             name,
             params,
-            span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
+            span: Span::new(0, 0),
             body,
         })
     }
 
     fn parse_let_decl(&mut self) -> ParseResult<LetDecl> {
-        let start = self.peek_span();
+        let _start = self.peek_span();
         self.expect(&Token::Let)?;
         let (name, _) = self.expect_ident()?;
         self.expect(&Token::Assign)?;
@@ -535,7 +535,7 @@ impl Parser {
         Ok(LetDecl {
             name,
             value,
-            span: Span::new(start.start, self.tokens[self.pos - 1].span.end, 0, 0),
+            span: Span::new(0, 0),
         })
     }
 
@@ -750,7 +750,7 @@ fn expr_to_lvalue(expr: Expr) -> ParseResult<LValue> {
         }
         _ => Err(ParseError {
             message: "Invalid assignment target".to_string(),
-            span: Span::new(0, 0, 0, 0), //TODO: track spans in Expr
+            span: Span::new(0, 0), //TODO: track spans in Expr
         }),
     }
 }
