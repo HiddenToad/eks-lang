@@ -46,6 +46,28 @@ impl<'ctx> Codegen<'ctx> {
         pm.add_loop_vectorize_pass();
         pm.add_scalar_repl_aggregates_pass();
 
+        let void_type = context.void_type();
+        let i64_type = context.i64_type();
+        let f64_type = context.f64_type();
+        let str_type = context.i8_type().ptr_type(AddressSpace::default());
+
+        //intrinsics
+        module.add_function(
+            "__eks_print_int",
+            void_type.fn_type(&[i64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "__eks_print_float",
+            void_type.fn_type(&[f64_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "__eks_print_string",
+            void_type.fn_type(&[str_type.into()], false),
+            None,
+        );
+
         Self {
             context,
             module,
@@ -225,7 +247,7 @@ impl<'ctx> Codegen<'ctx> {
                 .i8_type()
                 .ptr_type(AddressSpace::default())
                 .into()),
-            Type::Void => Err("Cannot resolve void as a value type".into()),
+            Type::Void => Err("Cannot resolve void as a value type".to_string()),
             Type::Custom(name) => self
                 .comp_types
                 .get(name)
@@ -244,7 +266,7 @@ impl<'ctx> Codegen<'ctx> {
             global.set_constant(true);
             Ok(())
         } else {
-            Err("Global let currently only supports string literals".into())
+            Err("Global let currently only supports string literals".to_string())
         }
     }
 
@@ -480,7 +502,9 @@ impl<'ctx> Codegen<'ctx> {
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
         match stmt {
             Stmt::Let { name, value } => {
-                let val = self.compile_expr(value)?;
+                let val = self.compile_expr(value)?.ok_or_else(|| {
+                    "Cannot store result of void expression in variable".to_string()
+                })?;
                 let alloca = self
                     .builder
                     .build_alloca(val.get_type(), name)
@@ -494,13 +518,18 @@ impl<'ctx> Codegen<'ctx> {
             }
             Stmt::Return(expr) => {
                 if !self.active_query.is_empty() {
-                    return Err("Cannot return values from systems".into());
+                    return Err("Cannot return values from systems".to_string());
                 }
 
+                // compile_expr returns Option<BasicValueEnum>.
+                // Match on the outer Option first (Some/None from the `expr` enum field)
                 let ret_val = match expr {
-                    Some(e) => Some(self.compile_expr(e)?),
+                    Some(e) => self.compile_expr(e)?,
                     None => None,
                 };
+
+                // as_ref() on Option gives Option<&BasicValueEnum>.
+                // If None, ret_ref is None. If Some, ret_ref is &BasicValue.
                 let ret_ref = ret_val.as_ref().map(|v| v as &dyn BasicValue);
                 self.builder
                     .build_return(ret_ref)
@@ -510,7 +539,10 @@ impl<'ctx> Codegen<'ctx> {
 
             Stmt::Assign { target, value } => {
                 let ptr = self.compile_lvalue(target)?;
-                let val = self.compile_expr(value)?;
+                // Unwrap the Option, throw error if user tries to assign void
+                let val = self.compile_expr(value)?.ok_or::<String>(
+                    "Cannot store result of void expression in variable".to_string(),
+                )?;
                 self.builder
                     .build_store(ptr, val)
                     .map_err(|e| e.to_string())
@@ -530,7 +562,11 @@ impl<'ctx> Codegen<'ctx> {
                 let end_bb = self.context.append_basic_block(function, "if.end");
 
                 //evaluate the condition, which should give us an i1 (bool) value
-                let cond_val = self.compile_expr(condition)?.into_int_value();
+                //unwrap the Option and error if void
+                let cond_val = self
+                    .compile_expr(condition)?
+                    .ok_or("Cannot use void expression as condition".to_string())?
+                    .into_int_value();
 
                 //now we branch. if true, go to then_bb, if false, go to else_bb
                 self.builder
@@ -677,7 +713,7 @@ impl<'ctx> Codegen<'ctx> {
                     .build_struct_gep(base_ptr, field_idx, "field_ptr")
                     .map_err(|e| e.to_string())
             }
-            _ => Err("Cannot get pointer to this expression".into()),
+            _ => Err("Cannot get pointer to this expression".to_string()),
         }
     }
 
@@ -707,22 +743,28 @@ impl<'ctx> Codegen<'ctx> {
         Err(format!("Unknown field {} in {}", field_name, comp_name))
     }
 
-    fn compile_expr(&mut self, expr: &Expr) -> Result<BasicValueEnum<'ctx>, String> {
+    fn compile_expr(&mut self, expr: &Expr) -> Result<Option<BasicValueEnum<'ctx>>, String> {
         match expr {
-            Expr::Int(n) => Ok(self.context.i64_type().const_int(*n as u64, false).into()),
-            Expr::Float(f) => Ok(self.context.f64_type().const_float(*f).into()),
-            Expr::Bool(b) => Ok(self.context.bool_type().const_int(*b as u64, false).into()),
-            Expr::StringLiteral(s) => Ok(self
-                .builder
-                .build_global_string_ptr(s, "strtmp")
-                .map_err(|e| e.to_string())?
-                .as_basic_value_enum()),
+            Expr::Int(n) => Ok(Some(
+                self.context.i64_type().const_int(*n as u64, false).into(),
+            )),
+            Expr::Float(f) => Ok(Some(self.context.f64_type().const_float(*f).into())),
+            Expr::Bool(b) => Ok(Some(
+                self.context.bool_type().const_int(*b as u64, false).into(),
+            )),
+            Expr::StringLiteral(s) => Ok(Some(
+                self.builder
+                    .build_global_string_ptr(s, "strtmp")
+                    .map_err(|e| e.to_string())?
+                    .as_basic_value_enum(),
+            )),
             Expr::Ident(name) => {
                 if let Some(qv) = self.active_query.get(name) {
                     return self
                         .builder
                         .build_load(qv.index_ptr, name)
-                        .map_err(|e| e.to_string());
+                        .map_err(|e| e.to_string())
+                        .map(Some);
                 }
                 let ptr = self
                     .variables
@@ -731,6 +773,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder
                     .build_load(*ptr, name)
                     .map_err(|e| e.to_string())
+                    .map(Some)
             }
             Expr::Call { callee, args } => {
                 if let Some(struct_type) = self.comp_types.get(callee) {
@@ -745,14 +788,12 @@ impl<'ctx> Codegen<'ctx> {
                         ));
                     }
 
-                    //undef struct to avoid alloca and store calls
                     let mut struct_val = struct_type.get_undef().as_basic_value_enum();
 
-                    //inject arguments directly into struct fields using insert_value.
-                    //this avoids calling alloca and store for each field.
                     for (i, arg_expr) in args.iter().enumerate() {
-                        let val = self.compile_expr(arg_expr)?;
-                        //insert the value directly into the struct
+                        let val = self
+                            .compile_expr(arg_expr)?
+                            .ok_or_else(|| "Cannot use void to construct a struct".to_string())?;
                         struct_val = self
                             .builder
                             .build_insert_value(
@@ -765,9 +806,38 @@ impl<'ctx> Codegen<'ctx> {
                             .as_basic_value_enum();
                     }
 
-                    //return by value
-                    return Ok(struct_val);
+                    return Ok(Some(struct_val));
+                } else if callee == "println" {
+                    if args.len() != 1 {
+                        return Err("println expects exactly 1 argument".to_string());
+                    }
+
+                    let val = self
+                        .compile_expr(&args[0])?
+                        .ok_or("println does not support this type".to_string())?;
+
+                    let backing_fn_name = if val.is_int_value() {
+                        "__eks_print_int"
+                    } else if val.is_float_value() {
+                        "__eks_print_float"
+                    } else if val.is_pointer_value() {
+                        "__eks_print_string"
+                    } else {
+                        return Err("println does not support this type".to_string());
+                    };
+
+                    let func = self
+                        .module
+                        .get_function(backing_fn_name)
+                        .ok_or("Missing println intrinsic")?;
+
+                    let call_site = self
+                        .builder
+                        .build_call(func, &[val.into()], "printlntmp")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call_site.try_as_basic_value().left());
                 }
+
                 let func = self
                     .functions
                     .get(callee)
@@ -776,29 +846,33 @@ impl<'ctx> Codegen<'ctx> {
 
                 let mut compiled_args: Vec<BasicMetadataValueEnum> = vec![];
                 for arg in args {
-                    compiled_args.push(self.compile_expr(arg)?.into());
+                    compiled_args.push(
+                        self.compile_expr(arg)?
+                            .ok_or::<String>("Cannot pass void as argument".to_string())?
+                            .into(),
+                    );
                 }
 
                 let call_site = self
                     .builder
                     .build_call(func, &compiled_args, "calltmp")
                     .map_err(|e| e.to_string())?;
-                call_site
-                    .try_as_basic_value()
-                    .left()
-                    .ok_or("Void function used as value".into())
+
+                Ok(call_site.try_as_basic_value().left())
             }
             Expr::Binary { left, op, right } => {
-                let l = self.compile_expr(left)?;
-                let r = self.compile_expr(right)?;
+                let l = self
+                    .compile_expr(left)?
+                    .ok_or("Cannot use void as operand".to_string())?;
+                let r = self
+                    .compile_expr(right)?
+                    .ok_or("Cannot use void as operand".to_string())?;
 
-                //are we doing int operations or float operations?
                 if l.is_float_value() && r.is_float_value() {
                     let l = l.into_float_value();
                     let r = r.into_float_value();
 
                     let result = match op {
-                        //comparisons first (all return an i1 bool)
                         BinOp::Eq => self
                             .builder
                             .build_float_compare(inkwell::FloatPredicate::OEQ, l, r, "tmp")
@@ -830,7 +904,6 @@ impl<'ctx> Codegen<'ctx> {
                             .map_err(|e| e.to_string())?
                             .as_basic_value_enum(),
 
-                        //then math ops, which return floats
                         _ => {
                             let math_val = match op {
                                 BinOp::Add => self
@@ -850,17 +923,15 @@ impl<'ctx> Codegen<'ctx> {
                                     .build_float_div(l, r, "tmp")
                                     .map_err(|e| e.to_string())?,
                                 _ => {
-                                    return Err(
-                                        "Cannot use logical operators (&&, ||) on floats".into()
-                                    )
+                                    return Err("Cannot use logical operators (&&, ||) on floats"
+                                        .to_string())
                                 }
                             };
                             math_val.as_basic_value_enum()
                         }
                     };
-                    Ok(result)
+                    Ok(Some(result))
                 } else if l.is_int_value() && r.is_int_value() {
-                    //regular int math
                     let l = l.into_int_value();
                     let r = r.into_int_value();
 
@@ -914,40 +985,45 @@ impl<'ctx> Codegen<'ctx> {
                             .build_or(l, r, "tmp")
                             .map_err(|e| e.to_string())?,
                     };
-                    Ok(result.as_basic_value_enum())
+                    Ok(Some(result.as_basic_value_enum()))
                 } else {
-                    Err("Type mismatch in binary operation (cannot mix int and float without casting)".into())
+                    Err("Type mismatch in binary operation (cannot mix int and float without casting)".to_string())
                 }
             }
             Expr::Unary { op, expr: inner } => {
-                let val = self.compile_expr(inner)?;
+                let val = self
+                    .compile_expr(inner)?
+                    .ok_or("Cannot use void in unary operation".to_string())?;
 
                 if val.is_float_value() {
                     let f = val.into_float_value();
                     match op {
-                        UnOp::Neg => Ok(self
-                            .builder
-                            .build_float_neg(f, "tmp")
-                            .map_err(|e| e.to_string())?
-                            .as_basic_value_enum()),
-                        UnOp::Not => Err("Cannot use logical NOT on a float".into()),
+                        UnOp::Neg => Ok(Some(
+                            self.builder
+                                .build_float_neg(f, "tmp")
+                                .map_err(|e| e.to_string())?
+                                .as_basic_value_enum(),
+                        )),
+                        UnOp::Not => Err("Cannot use logical NOT on a float".to_string()),
                     }
                 } else if val.is_int_value() {
                     let v = val.into_int_value();
                     match op {
-                        UnOp::Neg => Ok(self
-                            .builder
-                            .build_int_neg(v, "tmp")
-                            .map_err(|e| e.to_string())?
-                            .as_basic_value_enum()),
-                        UnOp::Not => Ok(self
-                            .builder
-                            .build_not(v, "tmp")
-                            .map_err(|e| e.to_string())?
-                            .as_basic_value_enum()),
+                        UnOp::Neg => Ok(Some(
+                            self.builder
+                                .build_int_neg(v, "tmp")
+                                .map_err(|e| e.to_string())?
+                                .as_basic_value_enum(),
+                        )),
+                        UnOp::Not => Ok(Some(
+                            self.builder
+                                .build_not(v, "tmp")
+                                .map_err(|e| e.to_string())?
+                                .as_basic_value_enum(),
+                        )),
                     }
                 } else {
-                    Err("Invalid type for unary operation".into())
+                    Err("Invalid type for unary operation".to_string())
                 }
             }
             Expr::FieldAccess { object, field } => {
@@ -977,7 +1053,8 @@ impl<'ctx> Codegen<'ctx> {
                             return self
                                 .builder
                                 .build_load(entity_comp_ptr, field)
-                                .map_err(|e| e.to_string());
+                                .map_err(|e| e.to_string())
+                                .map(Some);
                         }
                     }
                 }
@@ -995,6 +1072,7 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder
                     .build_load(field_ptr, field)
                     .map_err(|e| e.to_string())
+                    .map(Some)
             }
         }
     }

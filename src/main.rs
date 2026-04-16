@@ -20,7 +20,7 @@ pub use parse::*;
 
 fn main() {
     let filename = env::args().nth(1).unwrap();
-    let contents = fs::read_to_string(filename).unwrap();
+    let contents = fs::read_to_string(&filename).unwrap();
 
     let tokens = lex(contents);
     println!("{:?}", tokens);
@@ -69,16 +69,17 @@ fn main() {
     let link_status = std::process::Command::new("cc")
         .args([
             "target.o",
+            "runtime.c",
             "-o",
-            env::args().nth(1).unwrap().split(".").next().unwrap(),
+            filename.split('.').next().unwrap(),
         ])
         .status()
-        .expect("Failed to run linker (Do you have gcc or clang installed?)");
+        .expect("Failed to run linker");
 
     if link_status.success() {
         println!(
             "Success! Run it with ./{}",
-            env::args().nth(1).unwrap().split(".").next().unwrap()
+            filename.split('.').next().unwrap()
         );
     } else {
         eprintln!("Linking failed.");

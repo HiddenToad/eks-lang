@@ -4,5 +4,6 @@ fun(Area) doubled(a: Area) { return Area(a.w * 2, a.h * 2); }
 
 fun() main() {
     let result = doubled(Area(5, 10));
+    println(result.w * result.h);
     return result.w * result.h;
 }
