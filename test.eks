@@ -7,5 +7,5 @@ fun(int) factorial(n: int){
 }
 
 fun() main() {
-    println(factorial(99));
+    println(factorial(9));
 }

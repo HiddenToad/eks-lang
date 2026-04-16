@@ -335,7 +335,12 @@ impl<'ctx> Codegen<'ctx> {
             match &fun.ret {
                 Type::Void => {
                     //void functions are allowed to omit a return, and will implicitly return void at the end of the scope.
-                    self.builder.build_return(None).map_err(|e| e.to_string())?;
+                    //however, if this is the "main" function, we must return 0 to satisfy OS requirements for the entry point.
+                    if fun.name == "main" {
+                        self.builder.build_return(Some(&self.context.i32_type().const_int(0, false))).map_err(|e| e.to_string())?;
+                    } else {
+                        self.builder.build_return(None).map_err(|e| e.to_string())?;
+                    }
                 }
                 _ => {
                     //for anything else, though, we need to inform the user they missed a return statement,
