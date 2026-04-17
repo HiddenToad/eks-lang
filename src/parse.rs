@@ -321,29 +321,33 @@ impl Parser {
     }
 
     fn parse_params(&mut self) -> ParseResult<Vec<Param>> {
-        self.expect(&Token::LParen)?;
-        let mut params = vec![];
-        while self.peek() != &Token::RParen {
-            if !matches!(self.peek(), Token::Ident(_)) {
-                break;
-            }
+        if let Token::LParen = self.peek() {
+            self.expect(&Token::LParen)?;
+            let mut params = vec![];
+            while self.peek() != &Token::RParen {
+                if !matches!(self.peek(), Token::Ident(_)) {
+                    break;
+                }
 
-            let (name, _) = self.expect_ident()?;
-            self.expect(&Token::Colon)?;
-            let ty = self.parse_type()?;
-            params.push(Param { name, ty });
+                let (name, _) = self.expect_ident()?;
+                self.expect(&Token::Colon)?;
+                let ty = self.parse_type()?;
+                params.push(Param { name, ty });
 
-            if self.peek() == &Token::Comma {
-                self.advance();
-            } else if self.peek() != &Token::RParen {
-                return Err(ParseError {
-                    message: "Expected ',' or ')' after parameter".to_string(),
-                    span: self.peek_span(),
-                });
+                if self.peek() == &Token::Comma {
+                    self.advance();
+                } else if self.peek() != &Token::RParen {
+                    return Err(ParseError {
+                        message: "Expected ',' or ')' after parameter".to_string(),
+                        span: self.peek_span(),
+                    });
+                }
             }
+            self.expect(&Token::RParen)?;
+            Ok(params)
+        } else {
+            Ok(vec![]) //allow elision of parens and params for zero-arg funs/sys
         }
-        self.expect(&Token::RParen)?;
-        Ok(params)
     }
 
     fn parse_type(&mut self) -> ParseResult<Type> {
@@ -462,10 +466,15 @@ impl Parser {
     fn parse_fun_decl(&mut self) -> ParseResult<FunDecl> {
         let _start = self.peek_span();
         self.expect(&Token::Fun)?;
+        let ret;
 
-        self.expect(&Token::LParen)?;
-        let ret = self.parse_return_type()?;
-        self.expect(&Token::RParen)?;
+        if let Token::LParen = self.peek() {
+            self.advance();
+            ret = self.parse_return_type()?;
+            self.expect(&Token::RParen)?;
+        } else {
+            ret = Type::Void; //allow elision of parens and return type for void funs
+        }
 
         let (name, _) = self.expect_ident()?;
         let params = self.parse_params()?;

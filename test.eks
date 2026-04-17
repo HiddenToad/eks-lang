@@ -1,11 +1,8 @@
-fun(int) factorial(n: int){
-    if n <= 0{
-        return 1;
-    } else {
-        return n * factorial(n - 1);
-    }
+fun(string) zero{
+    return "hi";
 }
 
-fun() main() {
-    println(factorial(9));
+fun main{
+    let mut x = zero();
+    println(x);
 }
